@@ -36,6 +36,10 @@ export interface AuthPlatform {
   fetch?: typeof fetch;
 }
 
+/** Development aid: receives the stage and message of low-level failures (never credentials). */
+export const authDebug: { log?: (stage: string, message: string) => void } = {};
+const debug = (stage: string, e: unknown) => authDebug.log?.(stage, e instanceof Error ? `${e.name}: ${e.message}` : String(e));
+
 export class AuthError extends Error {
   constructor(public code: string, message: string) {
     super(message);
@@ -218,6 +222,22 @@ export class ChatGptAuth {
     return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
   }
 
+  /**
+   * Retries on network errors only. Right after the browser hands back to
+   * the app, the app may still be in the background, where requests can
+   * fail for a moment; the authorization code stays valid meanwhile.
+   */
+  private async retrying<T>(job: () => Promise<T>, tries = 4): Promise<T> {
+    for (let i = 1; ; i++) {
+      try {
+        return await job();
+      } catch (e) {
+        if (i >= tries) throw e;
+        await new Promise((r) => setTimeout(r, 900 * i));
+      }
+    }
+  }
+
   private async form(url: string, params: Record<string, string>, timeoutMs = 30000): Promise<{ status: number; json?: Record<string, any> }> {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
@@ -313,8 +333,9 @@ export class ChatGptAuth {
 
       let res: { status: number; json?: Record<string, any> };
       try {
-        res = await this.form(TOKEN, { grant_type: 'authorization_code', client_id: clientId, code, code_verifier: verifier, redirect_uri: redirect, resource: RESOURCE });
-      } catch {
+        res = await this.retrying(() => this.form(TOKEN, { grant_type: 'authorization_code', client_id: clientId, code, code_verifier: verifier, redirect_uri: redirect, resource: RESOURCE }));
+      } catch (e) {
+        debug('token', e);
         throw new AuthError('network', 'Could not reach ChatGPT. Check your connection.');
       }
       const t = res.json;
@@ -387,7 +408,8 @@ export class ChatGptAuth {
     let res: { status: number; json?: Record<string, any> };
     try {
       res = await this.form(TOKEN, { grant_type: 'refresh_token', client_id: this.meta!.client_id, refresh_token: this.refresh!, resource: RESOURCE });
-    } catch {
+    } catch (e) {
+      debug('refresh', e);
       throw new AuthError('network', 'Could not reach ChatGPT. Check your connection.');
     }
     const t = res.json;
@@ -462,8 +484,9 @@ export class ChatGptAuth {
     if (!header || !claims || header.alg !== 'RS256') throw bad;
     let keys: Record<string, any>[] = [];
     try {
-      keys = ((await this.getJson(JWKS))?.keys ?? []) as Record<string, any>[];
-    } catch {
+      keys = ((await this.retrying(() => this.getJson(JWKS)))?.keys ?? []) as Record<string, any>[];
+    } catch (e) {
+      debug('jwks', e);
       throw new AuthError('network', 'Could not reach ChatGPT. Check your connection.');
     }
     const key = keys.find((k) => k.kty === 'RSA' && (header!.kid === undefined || k.kid === header!.kid));

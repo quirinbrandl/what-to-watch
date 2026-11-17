@@ -4,7 +4,7 @@
     "slug": "what-to-watch",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "whattowatch",
+    "scheme": "dev.whattowatch.app",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#08080A",
     "icon": "./assets/icon/icon.png",
@@ -21,7 +21,8 @@
         "backgroundColor": "#0B0B0E",
         "foregroundImage": "./assets/icon/icon_fg.png",
         "monochromeImage": "./assets/icon/icon_mono.png"
-      }
+      },
+      "softwareKeyboardLayoutMode": "pan"
     },
     "plugins": [
       [

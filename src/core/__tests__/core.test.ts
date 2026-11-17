@@ -333,3 +333,12 @@ describe('id token crypto', () => {
     assert.equal(verifyRs256(data, bad, n, e), false);
   });
 });
+
+describe('privacy policy', () => {
+  test('the in-app copy matches PRIVACY.md', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { plainPrivacy } = await import('../../../tool/sync-privacy');
+    const { PRIVACY_TEXT } = await import('../../app/privacy');
+    assert.equal(PRIVACY_TEXT, plainPrivacy(readFileSync('PRIVACY.md', 'utf8')));
+  });
+});

@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["LoopbackAuthModule"]
+  },
+  "android": {
+    "modules": ["dev.whattowatch.loopback.LoopbackAuthModule"]
+  }
+}
