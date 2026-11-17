@@ -19,6 +19,9 @@ export class Discover extends Observable {
   verdicts = new Map<number, number>(); // film id -> the judge's predicted rating, as it comes in
   reveal?: Film[]; // the chosen films, shown on the wait screen for a moment before the feed opens
   private stageAt: number[] = []; // when each stage of this run began
+  private choosing = new Set<number>(); // films whose background scene is being chosen right now
+  private verdictAt = [0, 0]; // when the judge's first and latest verdict came in
+  private verdictFrom = 0; // how far through the judging stage the bar was at the first verdict
   error?: string;
   llmError?: LlmError;
   generation = 0; // bumped for every new session (resets the feed)
@@ -69,12 +72,12 @@ export class Discover extends Observable {
         // Let the wait screen land on the chosen films before the feed takes over.
         this.reveal = s.picks.map((p) => p.film);
         this.notify();
+        void this.scenes(this.reveal);
         await sleep(REVEAL_MS);
         if (run !== this.run) return;
       }
       this.session = s;
     });
-    void this.scenes();
   }
 
   async more(): Promise<void> {
@@ -90,6 +93,7 @@ export class Discover extends Observable {
   cancel(): void {
     this.run++;
     this.running = false;
+    this.reveal = undefined;
     this.loadingMore = false;
     this.stage = undefined;
     this.notify();
@@ -123,7 +127,14 @@ export class Discover extends Observable {
     this.pool = p.pool;
     for (const f of p.posters) if (f.poster && this.scouted.length < 150) this.scouted.push(f.poster);
     if (p.finalists) this.finalists = p.finalists;
-    if (p.verdict) this.verdicts.set(p.verdict.id, p.verdict.r);
+    if (p.verdict) {
+      const now = Date.now();
+      if (!this.verdicts.size) {
+        this.verdictAt = [now, now];
+        this.verdictFrom = timeShare((now - (this.stageAt[i] ?? now)) / 1000 / (app.settings.stageSecs ?? STAGE_SECS)[i]);
+      } else this.verdictAt[1] = now;
+      this.verdicts.set(p.verdict.id, p.verdict.r);
+    }
     this.notify();
   }
 
@@ -167,27 +178,30 @@ export class Discover extends Observable {
 
   /**
    * How far the current search is, for the progress bar. Time-based, from how
-   * long each stage took in recent searches, and from the judge's real
-   * progress once its verdicts arrive. It slows down instead of finishing
+   * long each stage took in recent searches; once the judge starts writing its
+   * verdicts, their count is the clock. It slows down instead of finishing
    * early when a stage runs long.
    */
-  progressNow(now = Date.now()): { fraction: number; secondsLeft: number } {
-    if (this.reveal) return { fraction: 1, secondsLeft: 0 };
+  progressNow(now = Date.now()): { fraction: number; secondsLeft: number; late: boolean } {
+    if (this.reveal) return { fraction: 1, secondsLeft: 0, late: false };
     const b = app.settings.stageSecs ?? STAGE_SECS;
     const i = Math.max(0, STAGES.indexOf(this.stage ?? 'taste'));
     const total = b.reduce((a, x) => a + x, 0);
     const before = b.slice(0, i).reduce((a, x) => a + x, 0);
     const after = b.slice(i + 1).reduce((a, x) => a + x, 0);
     const el = Math.max(0, (now - (this.stageAt[i] ?? now)) / 1000);
-    const f = el / b[i];
-    let within = f < 0.8 ? f : 0.8 + 0.19 * (1 - Math.exp(-(f - 0.8) * 2.5));
+    let within = timeShare(el / b[i]);
     let left = Math.max(b[i] - el, 3) + after;
-    if (this.stage === 'judging' && this.finalists.length && this.verdicts.size) {
-      const judged = Math.min(1, this.verdicts.size / this.finalists.length);
-      within = Math.max(within, 0.6 + 0.39 * judged);
-      left = Math.min(left, 2 + (1 - judged) * 8);
+    let late = el > b[i] * 1.25; // well past the usual time for this stage: no point in naming a number
+    const n = this.verdicts.size;
+    const all = this.finalists.length;
+    if (this.stage === 'judging' && n > 0 && all > 0) {
+      within = this.verdictFrom + (0.99 - this.verdictFrom) * Math.min(1, n / all);
+      const each = n > 1 ? (this.verdictAt[1] - this.verdictAt[0]) / 1000 / (n - 1) : 1;
+      left = Math.max(1, (all - n) * each - (now - this.verdictAt[1]) / 1000);
+      late = false;
     }
-    return { fraction: Math.min(0.99, (before + within * b[i]) / total), secondsLeft: left };
+    return { fraction: Math.min(0.99, (before + within * b[i]) / total), secondsLeft: left, late };
   }
 
   /** Remembers how long the stages took, so the next progress bar is closer to the truth. */
@@ -201,17 +215,17 @@ export class Discover extends Observable {
   }
 
   /** Picks a real scene as the background for each film on show. Runs after the films are already visible. */
-  private async scenes(): Promise<void> {
-    const s = this.session;
-    if (!s || !app.hasLlm) return;
-    const films = s.picks.map((p) => p.film).filter((f) => f.scene === undefined);
+  private async scenes(of?: Film[]): Promise<void> {
+    if (!app.hasLlm) return;
+    const films = (of ?? this.session?.picks.map((p) => p.film) ?? []).filter((f) => f.scene === undefined && !this.choosing.has(f.id));
     if (!films.length) return;
+    for (const f of films) this.choosing.add(f.id);
     try {
-      if ((await pickScenes(app.tmdb, app.llm, await app.model(), films)) > 0) {
-        this.notify();
-        app.saveFilms();
-      }
-    } catch {}
+      if ((await pickScenes(app.tmdb, app.llm, await app.model(), films, () => this.notify())) > 0) app.saveFilms();
+    } catch {
+    } finally {
+      for (const f of films) this.choosing.delete(f.id);
+    }
   }
 
   private persist(): void {
@@ -223,7 +237,9 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** How long the wait screen shows the chosen films before the feed opens. */
 const REVEAL_MS = 1500;
 /** Typical stage lengths in seconds before any search has been timed on this device. */
-const STAGE_SECS = [2, 22, 6, 30];
+const STAGE_SECS = [1, 45, 3, 55];
+/** The share of a stage that counts as done after `f` times its usual length: steady up to 80 %, then ever slower, never full. */
+const timeShare = (f: number) => (f < 0.8 ? f : 0.8 + 0.19 * (1 - Math.exp(-(f - 0.8) * 2.5)));
 
 export const discover = new Discover();
 

@@ -1,20 +1,22 @@
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
 import { GestureResponderEvent, Linking, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { discover } from '../app/discover';
 import { thud, tick } from '../app/platform';
 import { app, useStore } from '../app/store';
 import { signInFlow, ui } from '../app/ui';
-import { Pick, STAGES, Session, Stage } from '../core/engine/recommender';
-import { labelOf } from '../core/models';
+import { Pick, Session } from '../core/engine/recommender';
+import { Film, labelOf } from '../core/models';
 import { Tmdb } from '../core/tmdb';
 
-import { Blank, Icon, IconName, Overlay, Poster, PosterRibbon, RoundButton, ScoreRing, Stars } from './components';
+import { Blank, Icon, Overlay, Poster, RoundButton, ScoreRing, Stars } from './components';
 import { ProviderRow, metaLine } from './FilmSheet';
-import { C, caps, sans, display } from './theme';
+import { C, caps, display, sans } from './theme';
+import { Scouting } from './Wait';
 
 // A native, GPU-drawn shadow under the card (elevation on Android).
 const SHADOW = { backgroundColor: '#101013', elevation: 18, shadowColor: '#000', shadowOpacity: 0.55, shadowRadius: 26, shadowOffset: { width: 0, height: 18 } };
@@ -50,7 +52,12 @@ export function FeedScreen() {
   useEffect(() => setIndex(0), [generation]);
   const picks = s?.picks ?? [];
   const at = Math.min(index, picks.length);
-  const backdrop = s ? (picks[at] ?? picks[picks.length - 1])?.film.poster : undefined;
+  const current = s ? (picks[at] ?? picks[picks.length - 1])?.film : undefined;
+  // Have the next backgrounds ready before they are swiped to.
+  const scenes = picks.map((p) => p.film.scene).filter((x): x is string => !!x).join(' ');
+  useEffect(() => {
+    if (scenes) void Image.prefetch(scenes.split(' ').map((x) => Tmdb.img(x, 'w780')));
+  }, [scenes]);
 
   let body: React.ReactNode;
   if (!s) {
@@ -86,12 +93,7 @@ export function FeedScreen() {
   return (
     <Overlay>
       <View style={{ flex: 1 }} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
-        {backdrop && (
-          <View style={StyleSheet.absoluteFill} pointerEvents="none">
-            <Image source={{ uri: Tmdb.img(backdrop, 'w185') }} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={38} transition={500} />
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.58)' }]} />
-          </View>
-        )}
+        {current && <Backdrop film={current} />}
         {body}
         <View style={{ position: 'absolute', top: insets.top + 6, left: 10, right: 16, flexDirection: 'row', alignItems: 'center' }} pointerEvents="box-none">
           <RoundButton icon="chevron-down" label="Close" size={46} onPress={() => ui.closeFeed()} />
@@ -112,6 +114,30 @@ export function FeedScreen() {
         </View>
       </View>
     </Overlay>
+  );
+}
+
+/**
+ * Behind the card: a real scene from the film, slowly drifting, once one has
+ * been chosen (see engine/scenes.ts). Until then, and for films without one,
+ * the poster as a soft glow.
+ */
+function Backdrop({ film }: { film: Film }) {
+  const drift = useSharedValue(0);
+  useEffect(() => {
+    drift.value = withRepeat(withTiming(1, { duration: 22000, easing: Easing.inOut(Easing.quad) }), -1, true);
+  }, [drift]);
+  const moving = useAnimatedStyle(() => ({ transform: [{ scale: 1.08 + 0.12 * drift.value }, { translateX: (drift.value - 0.5) * 26 }] }));
+  const scene = film.scene || undefined;
+  return (
+    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
+      {film.poster && <Image source={{ uri: Tmdb.img(film.poster, 'w185') }} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={38} transition={500} />}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.58)' }]} />
+      <Animated.View style={[StyleSheet.absoluteFill, moving]}>
+        <Image source={scene ? { uri: Tmdb.img(scene, 'w780') } : null} style={StyleSheet.absoluteFill} contentFit="cover" transition={700} />
+      </Animated.View>
+      {scene && <LinearGradient colors={['rgba(0,0,0,0.66)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.82)']} locations={[0, 0.3, 0.6, 1]} style={StyleSheet.absoluteFill} />}
+    </View>
   );
 }
 
@@ -316,63 +342,4 @@ function MorePage({ session: s, height }: { session: Session; height: number }) 
     );
   }
   return <View style={{ height }}>{body}</View>;
-}
-
-const STEPS: Record<Stage, [IconName, string]> = {
-  taste: ['finger-print', 'Reading your taste'],
-  scouting: ['compass-outline', 'Scouting'],
-  checking: ['checkmark-done-outline', 'Checking the facts'],
-  judging: ['sparkles', 'Choosing for you'],
-};
-
-/** The wait, made of the real candidates as they are found. */
-export function Scouting({ compact = false }: { compact?: boolean }) {
-  const fallback = useRef<string[] | undefined>(undefined);
-  if (!fallback.current) {
-    fallback.current = app.lib
-      .all()
-      .slice(0, 60)
-      .map((e) => app.film(e.id)?.poster)
-      .filter((p): p is string => !!p);
-  }
-  const posters = discover.scouted.length >= 9 ? discover.scouted : [...discover.scouted, ...fallback.current];
-  const stage = discover.stage ?? 'taste';
-  const at = STAGES.indexOf(stage);
-  const h = compact ? 118 : 156;
-  const row = (r: number) => posters.filter((_, i) => i % 3 === r);
-  return (
-    <View style={{ flex: 1, justifyContent: 'center' }}>
-      {posters.length > 0 && (
-        <View style={{ transform: [{ rotate: '-3deg' }, { scale: 1.08 }], gap: 10 }}>
-          <PosterRibbon posters={row(0)} height={h} speed={30} />
-          <PosterRibbon posters={row(1)} height={h} speed={22} reverse />
-          {!compact && <PosterRibbon posters={row(2)} height={h} speed={36} />}
-        </View>
-      )}
-      <View style={{ alignItems: 'center', marginTop: compact ? 30 : 44 }} accessible accessibilityLiveRegion="polite" accessibilityLabel={STEPS[stage][1]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {STAGES.map((st, i) => (
-            <React.Fragment key={st}>
-              <View
-                style={{
-                  width: 42,
-                  height: 42,
-                  borderRadius: 21,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: i === at ? C.accent : i < at ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.07)',
-                }}>
-                <Icon name={STEPS[st][0]} size={19} color={i === at ? C.accentInk : i < at ? C.ink : C.faint} />
-              </View>
-              {i < STAGES.length - 1 && <View style={{ width: 22, height: 2, backgroundColor: i < at ? 'rgba(255,255,255,0.33)' : 'rgba(255,255,255,0.08)' }} />}
-            </React.Fragment>
-          ))}
-        </View>
-        <Text style={[display(compact ? 22 : 27), { marginTop: 22 }]}>{STEPS[stage][1]}</Text>
-        <Text style={[sans(13, 'medium', C.dim), { marginTop: 8 }]}>
-          {stage === 'judging' ? `${discover.pool} finalists` : discover.pool > 0 ? `${discover.pool} films in play` : 'This takes about a minute'}
-        </Text>
-      </View>
-    </View>
-  );
 }

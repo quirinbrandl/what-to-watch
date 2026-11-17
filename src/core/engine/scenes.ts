@@ -53,7 +53,7 @@ export function parseScenes(text: string, items: SceneItem[]): Map<number, strin
  * (and on the cached copy). Films whose lookup or model call fails stay
  * undecided and are tried again next time. Returns how many were decided.
  */
-export async function pickScenes(tmdb: Tmdb, llm: Llm, model: string, films: Film[]): Promise<number> {
+export async function pickScenes(tmdb: Tmdb, llm: Llm, model: string, films: Film[], onSome?: () => void): Promise<number> {
   const todo = films.filter((f) => f.scene === undefined);
   let done = 0;
   const set = (f: Film, scene: string) => {
@@ -69,6 +69,7 @@ export async function pickScenes(tmdb: Tmdb, llm: Llm, model: string, films: Fil
     if (it.stills.length >= 2) ask.push(it);
     else set(it.film, it.stills[0] ?? '');
   }
+  if (done) onSome?.();
   // The first films are on screen first, so they get a small call of their own that answers sooner.
   const groups = [ask.slice(0, 3), ask.slice(3)].filter((g) => g.length);
   await Promise.all(
@@ -76,6 +77,7 @@ export async function pickScenes(tmdb: Tmdb, llm: Llm, model: string, films: Fil
       try {
         const text = await llm.respond({ model, developer: sceneSystem, user: sceneParts(items), effort: 'low', retries: 0 });
         for (const [id, scene] of parseScenes(text, items)) set(items.find((it) => it.film.id === id)!.film, scene);
+        onSome?.();
       } catch {
         // Best effort: the feed keeps its plain background for these films.
       }

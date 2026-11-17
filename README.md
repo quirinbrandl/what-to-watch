@@ -24,6 +24,10 @@ TMDB discover ┘
 4. **LLM judge** predicts *your* rating for the best ~36 candidates, scores the fit to tonight's request and writes the explanation. It may only cite your films through tags (`[L12]`); `validateWhy` checks every tag against your library (rated ≥ 3.5★) and rejects star claims. Failed explanations fall back to a deterministic one.
 5. **Blend** 60% judge + 40% taste model, adjust for request fit and the familiar ↔ obscure dial, drop predicted misses (< 3★), then pick batches so one director or near-twin does not dominate.
 
+While you wait, the screen shows what the engine is doing, not a canned animation (`src/core/wall.ts`, `src/ui/Wait.tsx`): the wall of posters starts with your own films, every candidate found takes a tile, the finalists take over when the judge starts, tiles go dark as the judge's verdicts stream in, and the chosen films light up before the feed opens. The progress bar runs on how long each stage took in your last searches.
+
+**Backgrounds.** Behind each poster the feed shows a scene from the film. TMDB's main "backdrop" is often poster artwork without the title (13 of 21 films checked by eye), and nothing in its data tells the two apart. So after the picks are on screen, one small vision call per batch looks at up to five textless backdrops per film and picks a real scene (`src/core/engine/scenes.ts`; about 10 s and 3,600 input tokens for 8 films at low detail, 21 of 21 real scenes in the same check). The choice is saved with the film; until it arrives, and for films without a usable image, the poster is shown as a soft glow.
+
 No agent framework: the pipeline is a fixed sequence of two LLM calls with code-enforced constraints in between. LangChain/LangGraph would add a dependency and an orchestration layer without changing any of the steps.
 
 ### Evaluation
@@ -93,15 +97,16 @@ Release builds, signing and the Play Store listing: [docs/play-store.md](docs/pl
 
 ```
 src/core/        platform-neutral TypeScript, shared by the app and the eval CLI
-  engine/        taste model, request + hard filters, prompts, recommender
+  engine/        taste model, request + hard filters, prompts, recommender, scene picking
   auth.ts        Sign in with ChatGPT (PKCE, loopback redirect, ID-token check, rotating refresh)
   llm.ts         streaming Responses API client
   letterboxd.ts  ZIP import, TMDB matching, RSS sync
   tmdb.ts        TMDB client and film cache
+  wall.ts        what the wait screen's poster wall shows, without the drawing
 src/app/         device bindings and app state (secure storage, files, stores)
 src/ui/          screens and components
 modules/loopback-auth/   native 127.0.0.1 listener for the sign-in redirect (Kotlin, Swift)
-tool/            offline evaluation
+tool/            offline evaluation, icon drawing (make-icons.sh)
 android/         the Android project (committed; see docs/play-store.md)
 ```
 
@@ -113,7 +118,7 @@ The app follows OpenAI's [token-sharing flow for open-source apps](https://devel
 
 - Film data and images: [TMDB](https://www.themoviedb.org). This product uses the TMDB API but is not endorsed or certified by TMDB. The read-only TMDB token in `src/core/tmdb.ts` is embedded on purpose so the app works without a TMDB account; it only grants access to public data.
 - Streaming availability: JustWatch, via TMDB.
-- Fonts: Instrument Serif and Manrope (SIL Open Font License).
+- Fonts: Anton and Manrope (SIL Open Font License).
 
 ## License
 

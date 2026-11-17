@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "scheme": "dev.whattowatch.app",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#08080A",
+    "backgroundColor": "#0A0908",
     "icon": "./assets/icon/icon.png",
     "ios": {
       "supportsTablet": false,
@@ -28,7 +28,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#08080A",
+          "backgroundColor": "#0A0908",
           "image": "./assets/icon/splash.png",
           "imageWidth": 200
         }

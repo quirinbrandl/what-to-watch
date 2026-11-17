@@ -4,7 +4,6 @@
   "main": "index.ts",
   "dependencies": {
     "@expo-google-fonts/anton": "^0.4.2",
-    "@expo-google-fonts/instrument-serif": "^0.4.1",
     "@expo-google-fonts/manrope": "^0.4.3",
     "@expo/vector-icons": "^15.0.2",
     "@noble/hashes": "^2.4.0",
