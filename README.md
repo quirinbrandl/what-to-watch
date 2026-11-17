@@ -36,10 +36,12 @@ Results on one export (193 rated films, 88% of them ≥ 3★, model `gpt-6.1-sol
 
 | Ranking by | AUC ≥3★ | hit@10 (≥3★) | loved@10 (≥4★) | mean rating@10 | misses in 50 |
 |---|---|---|---|---|---|
-| TMDB score (baseline) | 0.790 | 96% | 76% | 4.16 | 2 |
-| Taste model | 0.841 | 98% | 74% | 4.17 | 1 |
-| LLM judge | 0.853 | 98% | 76% | 4.10 | 1 |
-| **Blend (shipped)** | **0.864** | **100%** | **84%** | **4.27** | **0** |
+| TMDB score (baseline) | 0.793 | 96% | 78% | 4.18 | 2 |
+| Taste model | 0.806 | 96% | 72% | 4.09 | 2 |
+| LLM judge | 0.847 | 98% | 68% | 4.01 | 1 |
+| **Blend (shipped)** | **0.849** | **98%** | **80%** | **4.22** | **1** |
+
+How stable is this? An earlier run with a different fold split gave the blend 0.864 / 100% / 84% / 0 misses and the baseline 0.790 / 96% / 76% / 2 misses, and the taste model alone scores 0.82–0.84 over three repeated splits (`eval local`). So the ordering holds, while single numbers move by about ±0.02.
 
 A second check runs the whole pipeline blind: a fold of ratings is hidden completely (as if those films were unseen), the engine recommends freely from all of TMDB, and we look at the hidden films it happens to bring back (2 folds, 78 hidden films):
 

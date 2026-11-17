@@ -15,7 +15,11 @@ export function ProviderRow({ film }: { film: Film }) {
   const sv = app.services;
   const p = film.prov;
   if (!p || p.region !== sv.region) return null;
-  const list = streamable(p).sort((a, b) => (sv.has(b) ? 1 : 0) - (sv.has(a) ? 1 : 0));
+  // TMDB lists plan variants separately ("Netflix Standard with Ads"); show each service once.
+  const all = streamable(p);
+  const list = all
+    .filter((x) => !all.some((y) => y !== x && x.name.toLowerCase().startsWith(`${y.name.toLowerCase()} `)))
+    .sort((a, b) => (sv.has(b) ? 1 : 0) - (sv.has(a) ? 1 : 0));
   if (!list.length) {
     const paid = [...new Map([...p.rent, ...p.buy].map((x) => [x.id, x])).values()];
     return (

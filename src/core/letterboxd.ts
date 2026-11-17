@@ -67,6 +67,8 @@ function dateSec(d: string | undefined | null): number | undefined {
 
 // ---------------------------------------------------------------- export ZIP
 
+export const filmKey = (name: string, year: number | undefined): string => `${name.toLowerCase()}|${year ?? ''}`;
+
 export class LbFilm {
   uri?: string;
   rating?: number;
@@ -82,7 +84,7 @@ export class LbFilm {
   tmdbId?: number;
   constructor(public readonly name: string, public readonly year: number | undefined) {}
   get key(): string {
-    return `${this.name.toLowerCase()}|${this.year ?? ''}`;
+    return filmKey(this.name, this.year);
   }
 }
 
@@ -297,7 +299,9 @@ export function matchScore(f: Film, title: string, year: number | undefined, yea
       s += d === 0 ? 40 : d === 1 || (yearHit && exact) ? 25 : d === 2 ? 0 : -40;
     }
   }
-  return s + Math.min(16, Math.log10(f.votes + 1) * 4);
+  // Popularity breaks ties between namesakes: Letterboxd often uses the
+  // festival year, and TMDB is full of near-empty entries with the same title.
+  return s + Math.min(24, Math.log10(f.votes + 1) * 6) - (f.votes < 5 ? 10 : 0);
 }
 
 /**
@@ -321,17 +325,32 @@ export async function matchTitle(tmdb: Tmdb, title: string, year: number | undef
   return bestScore >= 100 ? best : undefined;
 }
 
-/** Resolves every film of an export to a TMDB id. */
+/**
+ * Letterboxd's RSS feed carries exact TMDB ids. Use them for the films of an
+ * export that also appear in the feed, before falling back to title search.
+ */
+export function seedMatches(ex: LbExport, items: RssItem[]): void {
+  for (const it of items) {
+    const f = ex.films.get(filmKey(it.title, it.year));
+    if (f) f.tmdbId = it.tmdbId;
+  }
+}
+
+/** Resolves every film of an export to a TMDB id (films that already have one are kept). */
 export async function matchExport(ex: LbExport, tmdb: Tmdb, onProgress?: (done: number, total: number, film?: Film) => void): Promise<void> {
   const list = [...ex.films.values()];
   let done = 0;
   await Promise.all(
     list.map(async (f) => {
       let m: Film | undefined;
-      try {
-        m = await matchTitle(tmdb, f.name, f.year);
-      } catch {}
-      f.tmdbId = m?.id;
+      if (f.tmdbId === undefined) {
+        try {
+          m = await matchTitle(tmdb, f.name, f.year);
+        } catch {}
+        f.tmdbId = m?.id;
+      } else {
+        m = tmdb.cache.get(f.tmdbId);
+      }
       onProgress?.(++done, list.length, m);
     }),
   );
@@ -344,12 +363,14 @@ export async function matchExport(ex: LbExport, tmdb: Tmdb, onProgress?: (done: 
 export function applyExport(lib: Library, ex: LbExport): void {
   for (const e of lib.entries.values()) e.clearLetterboxd();
   lib.unmatched = [];
+  lib.lbKeys = {};
   for (const f of ex.films.values()) {
     const id = f.tmdbId;
     if (id === undefined) {
       lib.unmatched.push(f.year === undefined ? f.name : `${f.name} (${f.year})`);
       continue;
     }
+    lib.lbKeys[f.key] = id;
     const e = lib.entry(id);
     if (f.rating !== undefined && (e.lbRatingAt === undefined || (f.ratingAt ?? 0) >= e.lbRatingAt)) {
       e.lbRating = f.rating;
@@ -511,6 +532,32 @@ export function applyRss(lib: Library, items: RssItem[], now?: number): SyncResu
     if (!overlap && since !== undefined && sorted[0].pubAt > since) res.gap = true;
   }
   for (const it of sorted) {
+    // The feed's TMDB id is authoritative. If the export's title match put
+    // this film under another id, move its Letterboxd data to the right one.
+    const key = filmKey(it.title, it.year);
+    const old = lib.lbKeys[key];
+    if (old !== undefined && old !== it.tmdbId) {
+      const from = lib.entries.get(old);
+      if (from?.hasLetterboxd) {
+        const to = lib.entry(it.tmdbId);
+        if (from.lbRating !== undefined && (to.lbSrcAt === undefined || (from.lbSrcAt ?? 0) > to.lbSrcAt)) {
+          to.lbRating = from.lbRating;
+          to.lbRatingAt = from.lbRatingAt;
+          to.lbSrcAt = from.lbSrcAt;
+        }
+        to.lbWatched = to.lbWatched || from.lbWatched;
+        if (from.lbWatchedAt !== undefined && (to.lbWatchedAt === undefined || from.lbWatchedAt > to.lbWatchedAt)) to.lbWatchedAt = from.lbWatchedAt;
+        to.lbLiked = to.lbLiked || from.lbLiked;
+        to.favorite = to.favorite || from.favorite;
+        to.lbRewatch = to.lbRewatch || from.lbRewatch;
+        for (const d of from.watchDates) if (!to.watchDates.includes(d)) to.watchDates.push(d);
+        from.clearLetterboxd();
+        res.updated++;
+        res.ids.push(it.tmdbId);
+        lib.touch();
+      }
+    }
+    if (old !== undefined) lib.lbKeys[key] = it.tmdbId;
     const prev = lib.lbSeen[it.guid];
     if (prev === sig(it)) continue;
     const isNew = !lib.entries.has(it.tmdbId);
@@ -550,6 +597,7 @@ export function applyRss(lib: Library, items: RssItem[], now?: number): SyncResu
     for (const k of seen.filter((k) => !keep.has(k)).slice(0, seen.length - 400)) delete lib.lbSeen[k];
   }
   if (res.gap) lib.lbGap = true;
+  lib.prune();
   lib.lbLastSync = t;
   if (res.added + res.updated > 0) lib.touch();
   return res;

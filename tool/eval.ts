@@ -77,7 +77,7 @@ async function main(): Promise<void> {
   if (d.lib.unmatched.length) console.log(`Unmatched: ${d.lib.unmatched.join('; ')}`);
   const folds = parseInt(arg('folds') ?? '', 10);
   if (mode === 'local') local(d, args.includes('--ablate'));
-  else if (mode === 'judge') await evalJudge(d, arg('model'), Number.isFinite(folds) ? folds : 5);
+  else if (mode === 'judge') await evalJudge(d, arg('model'), Number.isFinite(folds) ? folds : 5, arg('effort'));
   else if (mode === 'blind') await evalBlind(d, arg('model'), Number.isFinite(folds) ? folds : 2, arg('prompt'));
   else console.error(`unknown mode ${mode}`);
 }

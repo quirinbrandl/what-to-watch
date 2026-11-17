@@ -145,6 +145,7 @@ export function StarInput({ value, onChange, size = 46 }: { value?: number; onCh
   const v = value ?? 0;
   const last = useRef<number | undefined>(value);
   const moved = useRef(false);
+  const downX = useRef(0);
   const start = useRef<number | undefined>(value);
   const at = (e: GestureResponderEvent) => Math.min(10, Math.max(1, Math.ceil((e.nativeEvent.locationX / (size * 5)) * 10))) / 2;
   const set = (n: number) => {
@@ -168,6 +169,7 @@ export function StarInput({ value, onChange, size = 46 }: { value?: number; onCh
       onResponderGrant={
         ((e: GestureResponderEvent) => {
           moved.current = false;
+          downX.current = e.nativeEvent.pageX;
           start.current = value;
           last.current = value;
           set(at(e));
@@ -175,6 +177,7 @@ export function StarInput({ value, onChange, size = 46 }: { value?: number; onCh
         }) as (e: GestureResponderEvent) => void
       }
       onResponderMove={(e) => {
+        if (Math.abs(e.nativeEvent.pageX - downX.current) < 8) return; // still a tap
         moved.current = true;
         set(at(e));
       }}

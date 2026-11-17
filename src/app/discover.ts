@@ -25,6 +25,19 @@ export class Discover extends Observable {
       if (j && !this.session && !this.running) {
         const s = Session.fromJson(j, app.films);
         if (s.picks.length) this.session = s;
+        // A restored pick must show complete details; refresh any that the
+        // film cache only holds in list form.
+        for (const p of s.picks) {
+          if (!p.film.full) {
+            void app.ensureFilm(p.film.id).then((f) => {
+              if (f?.full) {
+                p.film = f;
+                this.notify();
+                app.notify();
+              }
+            });
+          }
+        }
       }
     } catch {}
     this.notify();
@@ -124,3 +137,9 @@ export class Discover extends Observable {
 }
 
 export const discover = new Discover();
+
+// The films of the current session must not be pruned from the film cache.
+app.pinned = () => {
+  const s = discover.session;
+  return s ? [...s.picks, ...s.reserve].flatMap((p) => [p.film.id, ...p.anchors.map((a) => a.id)]) : [];
+};

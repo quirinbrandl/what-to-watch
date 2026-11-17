@@ -68,7 +68,7 @@ The `android/` folder is committed and edited by hand (signing, trimmed permissi
 - **Ads:** none. **In-app purchases:** none.
 - **Content rating:** film posters and descriptions of all kinds can appear (adult-flagged titles are filtered out); answer the questionnaire accordingly (user-generated content: no).
 - **Target audience:** 13+ (not directed at children).
-- **Permissions:** `INTERNET` and `VIBRATE` (haptics) only.
+- **Permissions:** `INTERNET`, `ACCESS_NETWORK_STATE` and `VIBRATE` (haptics). No storage, location, contacts or notification permissions.
 - **TMDB:** attribution lives in Settings → About, as TMDB's terms require. The embedded TMDB token is read-only.
 - **OpenAI:** the sign-in button label, first-run notice and "Manage usage" link follow the Sign in with ChatGPT UI guidelines.
 

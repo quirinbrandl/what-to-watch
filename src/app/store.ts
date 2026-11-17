@@ -5,7 +5,7 @@ import { AppState as NativeAppState } from 'react-native';
 import { AuthError, ChatGptAuth } from '../core/auth';
 import { Recommender, engineConfig } from '../core/engine/recommender';
 import { Request, Services, newRequest, requestFromJson } from '../core/engine/request';
-import { LbNotFound, applyExport, applyRss, cleanUsername, fetchRss, matchExport, parseLetterboxdZip } from '../core/letterboxd';
+import { LbNotFound, applyExport, applyRss, cleanUsername, fetchRss, matchExport, parseLetterboxdZip, seedMatches } from '../core/letterboxd';
 import { Llm, LlmError, LlmModel } from '../core/llm';
 import { Film, Library, Prov } from '../core/models';
 import { FilmCache, Tmdb } from '../core/tmdb';
@@ -142,10 +142,13 @@ export class AppState extends Observable {
     if (filmsToo) this.saveFilms();
   }
 
+  /** Extra film ids that must survive cache pruning (the current session's picks). */
+  pinned: () => Iterable<number> = () => [];
+
   saveFilms(): void {
     clearTimeout(this.filmTimer);
     this.filmTimer = setTimeout(() => {
-      this.films.prune(new Set(this.lib.entries.keys()));
+      this.films.prune(new Set([...this.lib.entries.keys(), ...this.pinned()]));
       files.write('films', this.films.toJson()).catch(() => {});
     }, 3000);
   }
@@ -284,6 +287,13 @@ export class AppState extends Observable {
     };
     try {
       progress('Matching', 0, ex.films.size);
+      // Recent diary entries come with exact TMDB ids in the RSS feed.
+      const user = ex.username ?? this.lib.lbUsername;
+      if (user) {
+        try {
+          seedMatches(ex, await fetchRss(user));
+        } catch {}
+      }
       await matchExport(ex, this.tmdb, (done, total, f) => {
         if (f?.poster && posters.length < 60) posters.push(f.poster);
         if (done % 4 === 0 || done === total) progress('Matching', done, total);

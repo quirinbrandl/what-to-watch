@@ -1,6 +1,7 @@
 import { InstrumentSerif_400Regular, InstrumentSerif_400Regular_Italic } from '@expo-google-fonts/instrument-serif';
 import { Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold } from '@expo-google-fonts/manrope';
 import { useFonts } from 'expo-font';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
@@ -62,6 +63,7 @@ function TabBar() {
 
 function Shell({ autoRun }: { autoRun: boolean }) {
   useStore(ui);
+  const insets = useSafeAreaInsets();
   useEffect(() => {
     void discover.restore();
     if (autoRun) ui.openFeed({ start: true });
@@ -83,6 +85,10 @@ function Shell({ autoRun }: { autoRun: boolean }) {
         </View>
         {tab === 'library' && <LibraryScreen />}
         {tab === 'settings' && <SettingsScreen />}
+        {tab !== 'discover' && (
+          // Keeps scrolled content from colliding with the status bar.
+          <LinearGradient colors={[C.bg, 'rgba(8,8,10,0.85)', 'rgba(8,8,10,0)']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 18 }} pointerEvents="none" />
+        )}
         <TabBar />
       </View>
       {ui.feed && <FeedScreen />}

@@ -413,6 +413,7 @@ export class Library {
   lbSeen: Record<string, string> = {}; // RSS guid -> signature of what we applied
   lbGap = false; // RSS may have missed entries (>50 logs between syncs)
   unmatched: string[] = []; // Letterboxd films we could not find on TMDB
+  lbKeys: Record<string, number> = {}; // Letterboxd "title|year" -> TMDB id chosen at import
   rev = 0; // bumped on every change (cache key for the taste model)
 
   entry(id: number): Entry {
@@ -494,6 +495,7 @@ export class Library {
     this.lbSeen = o.lbSeen;
     this.lbGap = o.lbGap;
     this.unmatched = o.unmatched;
+    this.lbKeys = o.lbKeys;
     this.touch();
   }
 
@@ -504,6 +506,7 @@ export class Library {
     if (this.lbLastSync !== undefined) j.lbLastSync = this.lbLastSync;
     if (this.lbGap) j.lbGap = true;
     if (this.unmatched.length) j.unmatched = this.unmatched;
+    if (Object.keys(this.lbKeys).length) j.lbKeys = this.lbKeys;
     return j;
   }
 
@@ -519,6 +522,7 @@ export class Library {
     l.lbSeen = { ...(j.lbSeen ?? {}) };
     l.lbGap = j.lbGap === true;
     l.unmatched = [...(j.unmatched ?? [])];
+    l.lbKeys = { ...(j.lbKeys ?? {}) };
     return l;
   }
 }

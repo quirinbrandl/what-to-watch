@@ -195,6 +195,21 @@ ${o.rating === undefined ? '' : `<letterboxd:memberRating>${o.rating.toFixed(1)}
     assert.equal(lib.lbGap, true);
   });
 
+  test('the feed corrects a wrong title match from the export', () => {
+    const lib = new Library();
+    const wrong = lib.entry(555); // export matched "Film 10 & more (2020)" to the wrong TMDB film
+    wrong.lbRating = 4;
+    wrong.lbRatingAt = 10;
+    wrong.lbSrcAt = 10;
+    wrong.lbWatched = true;
+    lib.lbKeys['film 10 & more|2020'] = 555;
+    applyRss(lib, parseRss(feed([item(1, 10, '2026-11-02', { rating: 4 })])));
+    assert.equal(lib.get(555), undefined, 'the wrong entry is gone');
+    assert.equal(lib.get(10)!.rating, 4);
+    assert.equal(lib.rated.length, 1);
+    assert.equal(lib.lbKeys['film 10 & more|2020'], 10);
+  });
+
   test('username cleaning', () => {
     assert.equal(cleanUsername(' https://letterboxd.com/Some_User/ '), 'Some_User');
     assert.equal(cleanUsername('@abc'), 'abc');
@@ -210,6 +225,9 @@ describe('title matching', () => {
     assert.ok(matchScore(film(4, 'Dune', { year: 1984 }), 'Dune', 2021) < 100);
     assert.ok(matchScore(film(5, 'Hamilton', { year: 2025, votes: 170 }), 'Hamilton', 2020, true) > 100, 're-released film found by year search');
     assert.ok(matchScore(film(6, 'Hamilton: History Has Its Eyes On You', { year: 2020, votes: 8 }), 'Hamilton', 2020, true) < 100);
+    // Festival year vs release year: the real film beats a voteless namesake with the exact year.
+    assert.ok(matchScore(film(7, 'Obsession', { year: 2026, votes: 6652 }), 'Obsession', 2025) > matchScore(film(8, 'Obsession', { year: 2025, votes: 1 }), 'Obsession', 2025));
+    assert.ok(matchScore(film(9, 'Twins', { year: 1988, votes: 500 }), 'Twins', 1988) > matchScore(film(10, 'Twins', { year: 1989, votes: 50000 }), 'Twins', 1988), 'a real film with the exact year still wins');
   });
 });
 

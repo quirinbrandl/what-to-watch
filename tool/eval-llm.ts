@@ -128,7 +128,7 @@ async function llmFor(model?: string): Promise<[Llm, string]> {
  * Held-out rating prediction by the LLM judge, alone and blended with the
  * local taste model. One LLM call per fold; verdicts are cached.
  */
-export async function evalJudge(d: EvalData, model: string | undefined, folds: number): Promise<void> {
+export async function evalJudge(d: EvalData, model: string | undefined, folds: number, effort?: string): Promise<void> {
   const [llm, slug] = await llmFor(model);
   const sv = new Services('DE');
   const names = ['TMDB score (baseline)', 'taste model', 'LLM judge', 'blend 40% judge', 'blend 60% judge', 'blend 80% judge'];
@@ -140,11 +140,11 @@ export async function evalJudge(d: EvalData, model: string | undefined, folds: n
   for (let i = 0; i < split.length; i++) {
     const fold = split[i];
     const lib = without(d.lib, fold);
-    const rec = new Recommender(d.tmdb, llm, lib, sv, engineConfig(slug));
+    const rec = new Recommender(d.tmdb, llm, lib, sv, engineConfig(slug, effort ? { judgeEffort: effort } : {}));
     const m = rec.model();
     const brief = tasteBrief(lib, d.films, m, { tagged: true, listSeen: false });
     const cands = fold.map((id) => d.films.get(id)).filter((f) => !!f);
-    const cache = `${cacheDir}/judge_${slug}_${i}.json`;
+    const cache = `${cacheDir}/judge_${slug}${effort ? `_${effort}` : ''}_${i}.json`;
     let raw: Record<string, { r: number; m: number; why: string }> | undefined = readJson(cache);
     if (!raw) {
       const t0 = Date.now();
@@ -177,7 +177,7 @@ export async function evalJudge(d: EvalData, model: string | undefined, folds: n
     }
     for (const n of names) reports[n].push(fs[n]);
   }
-  console.log(`\n${split.length}-fold hold-out, LLM judge (${slug})\n${reportHeader}`);
+  console.log(`\n${split.length}-fold hold-out, LLM judge (${slug}${effort ? `, reasoning effort ${effort}` : ''})\n${reportHeader}`);
   for (const n of names) console.log(report(n, reports[n]));
   console.log(`\nExplanations passing validation: ${whyOk}/${whyAll} · candidates without verdict: ${missing}`);
   console.log(`LLM calls: ${llm.calls}, output chars: ${llm.chars}`);
