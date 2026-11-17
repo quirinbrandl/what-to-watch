@@ -10,6 +10,8 @@ web-build/
 android/.gradle/
 android/build/
 android/app/build/
+modules/*/android/build/
+modules/*/android/.gradle/
 android/.kotlin/
 android/local.properties
 ios/
