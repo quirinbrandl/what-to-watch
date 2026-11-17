@@ -7,7 +7,7 @@ import { useStore } from '../app/store';
 import { Dialog, ui } from '../app/ui';
 
 import { Icon, Sheet } from './components';
-import { C, sans, serif } from './theme';
+import { C, sans, display } from './theme';
 
 function TextButton({ label, onPress, color = C.accent }: { label: string; onPress: () => void; color?: string }) {
   return (
@@ -52,7 +52,7 @@ export function Layers() {
     <>
       {d?.kind === 'choose' && (
         <Sheet onClose={() => d.resolve(undefined)} maxHeight={0.8}>
-          <Text style={[serif(28), { marginTop: 8, marginBottom: 10 }]} accessibilityRole="header">
+          <Text style={[display(23), { marginTop: 8, marginBottom: 10 }]} accessibilityRole="header">
             {d.title}
           </Text>
           {d.items.map((it) => (
@@ -81,7 +81,7 @@ export function Layers() {
             entering={ZoomIn.duration(200)}
             exiting={FadeOut.duration(140)}
             style={{ alignSelf: 'stretch', maxHeight: height * 0.76, backgroundColor: C.card, borderRadius: 28, borderWidth: 1, borderColor: C.line, padding: 22, paddingBottom: 12 }}>
-            <Text style={serif(28)} accessibilityRole="header">
+            <Text style={display(23)} accessibilityRole="header">
               {d.title}
             </Text>
             {d.kind === 'ask' ? (

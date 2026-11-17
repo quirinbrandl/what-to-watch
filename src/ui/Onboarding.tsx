@@ -8,9 +8,9 @@ import { REGIONS, app, useStore } from '../app/store';
 import { apiKeyFlow, signInFlow, ui } from '../app/ui';
 import { cleanUsername } from '../core/letterboxd';
 
-import { BigButton, Chip, Icon, PosterWall } from './components';
+import { BigButton, Chip, Icon, PosterWall, Wordmark } from './components';
 import { ExportSteps, ServicesGrid, importZipFlow, openLetterboxdExport, pickRegion } from './Settings';
-import { C, sans, serif } from './theme';
+import { C, sans, display } from './theme';
 
 /** Three quick steps: sign in → Letterboxd → where you watch. */
 export function Onboarding({ onDone }: { onDone: () => void }) {
@@ -72,16 +72,14 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         <View style={{ flex: 1 }} />
         {step === 0 && (
           <Animated.View key="s0" entering={FadeInDown.duration(320)}>
-            <Text style={serif(64, C.ink, true)} accessibilityRole="header">
-              {'What\nto Watch'}
-            </Text>
+            <Wordmark size={50} mark />
             <BigButton label="Continue with ChatGPT" onPress={signIn} busy={busy} style={{ marginTop: 34 }} />
             {busy ? link('Cancel', () => app.auth.cancelSignIn()) : link('Use an OpenAI API key', async () => (await apiKeyFlow()) && next())}
           </Animated.View>
         )}
         {step === 1 && (
           <Animated.View key="s1" entering={FadeInDown.duration(320)}>
-            <Text style={serif(48)} accessibilityRole="header">
+            <Text style={display(40)} accessibilityRole="header">
               {imported ? 'Got your films' : 'Bring your\nLetterboxd'}
             </Text>
             {imported ? (
@@ -124,7 +122,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         )}
         {step === 2 && (
           <Animated.View key="s2" entering={FadeInDown.duration(320)}>
-            <Text style={serif(48)} accessibilityRole="header">
+            <Text style={display(40)} accessibilityRole="header">
               {'Where do\nyou watch?'}
             </Text>
             <View style={{ alignSelf: 'flex-start', marginTop: 18 }}>

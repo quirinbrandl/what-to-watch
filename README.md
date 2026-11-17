@@ -1,4 +1,4 @@
-# What to Watch
+# WhatToWatch
 
 A poster-first, local-first film recommender for Android (iOS-ready), built with React Native.
 

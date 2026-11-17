@@ -1,25 +1,30 @@
 import { TextStyle } from 'react-native';
 
 export const C = {
-  bg: '#08080A',
-  ink: '#F4F1EA',
-  dim: '#A29E96',
-  faint: '#5F5C57',
-  accent: '#FFC857',
-  accentInk: '#1B1300',
-  card: '#151518',
-  sheet: '#131316',
+  bg: '#0A0908',
+  ink: '#FFFFFF',
+  dim: '#A19C99',
+  faint: '#5F5B58',
+  accent: '#FF4D2E',
+  accentInk: '#FFFFFF',
+  accentSoft: 'rgba(255,77,46,0.2)',
+  accentLine: 'rgba(255,77,46,0.55)',
+  card: '#161514',
+  sheet: '#141312',
   line: 'rgba(255,255,255,0.12)',
   soft: 'rgba(255,255,255,0.08)',
-  glass: 'rgba(20,20,23,0.88)',
-  danger: '#FF6B5E',
+  glass: 'rgba(21,20,19,0.88)',
+  // The accent is itself a warm red, so warnings of loss lean pink and middling scores stay amber.
+  danger: '#FF4D7D',
+  mid: '#FFC857',
   good: '#5BD68A',
+  /** The app icon's tile; the logo is drawn on it wherever it appears. */
+  tile: '#0B0B0E',
 };
 
 /** Font family names as registered in App.tsx (bundled, never downloaded). */
 export const F = {
-  serif: 'InstrumentSerif_400Regular',
-  serifItalic: 'InstrumentSerif_400Regular_Italic',
+  display: 'Anton_400Regular',
   medium: 'Manrope_500Medium',
   semi: 'Manrope_600SemiBold',
   bold: 'Manrope_700Bold',
@@ -36,13 +41,15 @@ export const sans = (size: number, weight: Weight = 'medium', color: string = C.
   ...extra,
 });
 
-export const serif = (size: number, color: string = C.ink, italic = false): TextStyle => ({
-  fontFamily: italic ? F.serifItalic : F.serif,
+/** Titles and the app's name: Anton, always in capitals. */
+export const display = (size: number, color: string = C.ink): TextStyle => ({
+  fontFamily: F.display,
   fontSize: size,
-  lineHeight: Math.round(size * 1.08),
+  lineHeight: Math.round(size * 1.16),
   color,
   includeFontPadding: false,
-  letterSpacing: -0.2,
+  letterSpacing: size * 0.02,
+  textTransform: 'uppercase',
 });
 
 export const caps = (color: string = C.dim): TextStyle => sans(11.5, 'bold', color, { letterSpacing: 1.3 });

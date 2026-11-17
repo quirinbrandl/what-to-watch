@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**What to Watch** is a local-first app. There is no What to Watch server, no account with us, no analytics, no advertising and no tracking. We, the developers, never receive any of your data.
+**WhatToWatch** is a local-first app. There is no WhatToWatch server, no account with us, no analytics, no advertising and no tracking. We, the developers, never receive any of your data.
 
 ## What is stored, and where
 
@@ -17,7 +17,7 @@ Uninstalling the app, or **Settings → Delete everything**, removes all of it. 
 
 The app talks directly to three services, and only to do what you asked for:
 
-- **OpenAI** — to create recommendations, the app sends your request (mood text, filters) and the film titles and ratings from your library to OpenAI's API, using your own ChatGPT plan or your own API key. Signing in happens on OpenAI's website in your browser; the app never sees your password. OpenAI handles this data under its own terms and privacy policy.
+- **OpenAI** — to create recommendations, the app sends your request (mood text, filters) and the film titles and ratings from your library to OpenAI's API, using your own ChatGPT plan or your own API key. To choose a background picture for each recommended film, it also sends the web addresses of a few of that film's public images on TMDB, which OpenAI then loads from TMDB. Signing in happens on OpenAI's website in your browser; the app never sees your password. OpenAI handles this data under its own terms and privacy policy.
 - **TMDB** (The Movie Database) — to look up films, posters, scores and where they can be streamed. These requests contain film titles or IDs and your region, not your identity. Streaming availability data is provided by JustWatch through TMDB.
 - **Letterboxd** — if you enter a username or import an export, the app reads that profile's public RSS feed to pick up new diary entries. Nothing is ever written to Letterboxd.
 

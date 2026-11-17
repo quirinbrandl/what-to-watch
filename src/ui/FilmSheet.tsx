@@ -6,7 +6,7 @@ import { ui } from '../app/ui';
 import { Film, Prov, genreNames, yearOf } from '../core/models';
 
 import { BigButton, Chip, Icon, Poster, ProviderLogo, ScoreRing, Sheet, StarInput } from './components';
-import { C, caps, runtimeLabel, sans, serif } from './theme';
+import { C, caps, runtimeLabel, sans, display } from './theme';
 
 export const metaLine = (f: Film): string => [yearOf(f) ? String(yearOf(f)) : '', runtimeLabel(f.runtime), genreNames(f).slice(0, 3).join(', ')].filter(Boolean).join('  ·  ');
 
@@ -92,7 +92,7 @@ export function FilmSheet() {
       <View style={{ flexDirection: 'row', gap: 18, marginTop: 12 }}>
         <Poster path={f.poster} label={f.title} radius={14} style={{ width: 112, height: 168 }} />
         <View style={{ flex: 1 }}>
-          <Text style={serif(30)} numberOfLines={3}>
+          <Text style={display(26)} numberOfLines={3}>
             {f.title}
           </Text>
           <Text style={[sans(13, 'medium', C.dim, { lineHeight: 19 }), { marginTop: 8 }]}>{metaLine(f)}</Text>

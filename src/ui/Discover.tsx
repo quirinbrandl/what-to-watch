@@ -9,8 +9,8 @@ import { ui } from '../app/ui';
 import { hardFilterCount, newRequest } from '../core/engine/request';
 import { GENRES, GENRE_IDS, LANGUAGES } from '../core/models';
 
-import { BigButton, Chip, Icon, Poster, PosterWall, RangeSlider, Sheet, ToggleRow } from './components';
-import { C, caps, runtimeLabel, sans, serif } from './theme';
+import { BigButton, Chip, Icon, Poster, PosterWall, RangeSlider, Sheet, ToggleRow, Wordmark } from './components';
+import { C, caps, runtimeLabel, sans, display } from './theme';
 
 /** Home: your films as a living backdrop, one thumb-reach composer. */
 export function DiscoverScreen() {
@@ -60,9 +60,7 @@ export function DiscoverScreen() {
       <PosterWall posters={wall} />
       <View style={{ flex: 1, paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: insets.bottom + 86 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={serif(25, C.ink, true)} accessibilityRole="header">
-            What to Watch
-          </Text>
+          <Wordmark size={24} mark />
         </View>
         <View style={{ flex: 1 }} />
         {picks.length > 0 && (

@@ -13,6 +13,8 @@ export interface Progress {
   stage: Stage;
   pool: number; // films under consideration
   posters: Film[]; // newly discovered candidates (for the wait screen)
+  finalists?: Film[]; // sent once: the films that go to the judge
+  verdict?: { id: number; r: number }; // sent as the judge rates each finalist
 }
 
 /** A library film that backs up an explanation, shown with the user's real rating. */
@@ -221,12 +223,25 @@ export class Recommender {
   }
 
   /** Predicted rating, request fit and explanation for each candidate. */
-  async judge(cands: Film[], request: string, brief?: TasteBrief): Promise<Map<number, JudgeResult>> {
+  async judge(cands: Film[], request: string, brief?: TasteBrief, onVerdict?: (id: number, r: number) => void): Promise<Map<number, JudgeResult>> {
+    // The answer arrives line by line; completed lines are reported as they come.
+    let read = 0;
     const text = await this.llm.respond({
       model: this.cfg.model,
       developer: brief ? judgeSystem : judgeSystemGeneric,
       user: judgeUser(brief?.text ?? '', request, cands),
       effort: this.cfg.judgeEffort,
+      onText: onVerdict
+        ? (t) => {
+            const end = t.lastIndexOf('\n');
+            if (end <= read) return;
+            for (const j of extractJsonLines(t.slice(read, end))) {
+              const c = typeof j.c === 'number' ? Math.trunc(j.c) : NaN;
+              if (c >= 1 && c <= cands.length && typeof j.r === 'number') onVerdict(cands[c - 1].id, clamp(j.r, 0.5, 5));
+            }
+            read = end;
+          }
+        : undefined,
     });
     let rows = extractJsonLines(text);
     if (rows.length < Math.floor(cands.length / 2)) {
@@ -369,12 +384,14 @@ export class Recommender {
     const max = this.cfg.judgeMax;
     const nLlm = Math.min(okLlm.length, Math.max(Math.round(max * 0.7), max - okRest.length));
     const toJudge = [...okLlm.slice(0, nLlm), ...okRest.slice(0, max - nLlm)];
-    emit({ stage: 'judging', pool: toJudge.length, posters: [] });
+    emit({ stage: 'judging', pool: toJudge.length, posters: [], finalists: toJudge.map((x) => x.film!) });
     const brief = m ? tasteBrief(lib, films, m, { tagged: true, listSeen: false }) : undefined;
     let verdicts = new Map<number, JudgeResult>();
     if (toJudge.length) {
       try {
-        verdicts = await this.judge(toJudge.map((x) => x.film!), requestBrief(r, this.sv, seed), brief);
+        verdicts = await this.judge(toJudge.map((x) => x.film!), requestBrief(r, this.sv, seed), brief, (id, rating) =>
+          emit({ stage: 'judging', pool: toJudge.length, posters: [], verdict: { id, r: rating } }),
+        );
       } catch (e) {
         if (!(e instanceof LlmError)) throw e;
         if (e.needsSignIn) throw e;

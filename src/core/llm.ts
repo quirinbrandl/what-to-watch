@@ -42,6 +42,9 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * `fetchFn` must expose a streaming response body (expo/fetch in the app,
  * Node's fetch in the CLI).
  */
+/** One piece of a user message: text, or an image given by its URL (sent at low detail). */
+export type UserPart = { text: string } | { image: string };
+
 export class Llm {
   private static readonly base = 'https://api.openai.com/v1';
   calls = 0;
@@ -77,12 +80,12 @@ export class Llm {
    * reasoning effort ("low" | "medium" | "high"); models that do not accept
    * it are retried without.
    */
-  async respond(opts: { model: string; developer: string; user: string; effort?: string; onProgress?: (chars: number) => void; retries?: number }): Promise<string> {
+  async respond(opts: { model: string; developer: string; user: string | UserPart[]; effort?: string; onProgress?: (chars: number) => void; onText?: (text: string) => void; retries?: number }): Promise<string> {
     let effort = opts.effort;
     const retries = opts.retries ?? 1;
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.once(opts.model, opts.developer, opts.user, effort, opts.onProgress);
+        return await this.once(opts.model, opts.developer, opts.user, effort, opts.onProgress, opts.onText);
       } catch (e) {
         if (!(e instanceof LlmError)) throw e;
         if (e.status === 400 && effort !== undefined && e.message.toLowerCase().includes('reasoning')) {
@@ -95,7 +98,7 @@ export class Llm {
     }
   }
 
-  private async once(model: string, developer: string, user: string, effort: string | undefined, onProgress?: (chars: number) => void): Promise<string> {
+  private async once(model: string, developer: string, user: string | UserPart[], effort: string | undefined, onProgress?: (chars: number) => void, onText?: (text: string) => void): Promise<string> {
     const token = await this.token();
     const ctl = new AbortController();
     // One watchdog for both phases: connecting, then silence between chunks.
@@ -115,7 +118,7 @@ export class Llm {
             model,
             input: [
               { role: 'developer', content: developer },
-              { role: 'user', content: user },
+              { role: 'user', content: typeof user === 'string' ? user : user.map((p) => ('image' in p ? { type: 'input_image', image_url: p.image, detail: 'low' } : { type: 'input_text', text: p.text })) },
             ],
             store: false,
             stream: true,
@@ -153,6 +156,7 @@ export class Llm {
           case 'response.output_text.delta':
             out += ev.delta ?? '';
             onProgress?.(out.length);
+            onText?.(out);
             break;
           case 'response.completed':
             completed = true;

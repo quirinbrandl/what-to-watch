@@ -14,7 +14,7 @@ import { Tmdb } from '../core/tmdb';
 
 import { Blank, Icon, IconName, Overlay, Poster, PosterRibbon, RoundButton, ScoreRing, Stars } from './components';
 import { ProviderRow, metaLine } from './FilmSheet';
-import { C, caps, sans, serif } from './theme';
+import { C, caps, sans, display } from './theme';
 
 // A native, GPU-drawn shadow under the card (elevation on Android).
 const SHADOW = { backgroundColor: '#101013', elevation: 18, shadowColor: '#000', shadowOpacity: 0.55, shadowRadius: 26, shadowOffset: { width: 0, height: 18 } };
@@ -240,7 +240,7 @@ function Back({ pick: p, onFlip }: { pick: Pick; onFlip: () => void }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: 22, paddingBottom: 26 }}>
         <View {...tap} accessible accessibilityRole="button" accessibilityHint="Flips back to the poster">
-          <Text style={serif(34)}>{f.title}</Text>
+          <Text style={display(28)}>{f.title}</Text>
           <Text style={[sans(13, 'medium', C.dim, { lineHeight: 19 }), { marginTop: 10 }]}>{metaLine(f)}</Text>
           {f.directors.length > 0 && <Text style={[sans(13, 'semi'), { marginTop: 4 }]}>Directed by {f.directors.slice(0, 2).join(', ')}</Text>}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18 }}>
@@ -311,7 +311,7 @@ function MorePage({ session: s, height }: { session: Session; height: number }) 
     body = (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <RoundButton icon="chevron-down" label="More films" size={92} onPress={() => void discover.more()} />
-        <Text style={[serif(30), { marginTop: 16 }]}>More</Text>
+        <Text style={[display(26), { marginTop: 16 }]}>More</Text>
       </View>
     );
   }
@@ -368,7 +368,7 @@ export function Scouting({ compact = false }: { compact?: boolean }) {
             </React.Fragment>
           ))}
         </View>
-        <Text style={[serif(compact ? 26 : 32), { marginTop: 22 }]}>{STEPS[stage][1]}</Text>
+        <Text style={[display(compact ? 22 : 27), { marginTop: 22 }]}>{STEPS[stage][1]}</Text>
         <Text style={[sans(13, 'medium', C.dim), { marginTop: 8 }]}>
           {stage === 'judging' ? `${discover.pool} finalists` : discover.pool > 0 ? `${discover.pool} films in play` : 'This takes about a minute'}
         </Text>

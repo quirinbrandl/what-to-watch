@@ -45,6 +45,7 @@ export class FilmCache {
       old.pop = f.pop;
       return old;
     }
+    if (old?.scene !== undefined && f.scene === undefined) f.scene = old.scene;
     this.films.set(f.id, f);
     return f;
   }
@@ -69,6 +70,15 @@ export class FilmCache {
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Orders a film's textless backdrops for scene picking: the main one first, then by rating. */
+export function rankStills(main: string | undefined, backdrops: unknown, n = 5): string[] {
+  const list = (Array.isArray(backdrops) ? backdrops : [])
+    .filter((b) => b && typeof b.file_path === 'string' && (b.iso_639_1 === null || b.iso_639_1 === undefined) && b.file_path !== main)
+    .sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0) || (b.vote_count ?? 0) - (a.vote_count ?? 0))
+    .map((b) => b.file_path as string);
+  return [...(main ? [main] : []), ...list].slice(0, n);
+}
 
 export class Tmdb {
   /**
@@ -136,9 +146,17 @@ export class Tmdb {
     for (const r of (j.recommendations?.results ?? []) as any[]) {
       if (r && typeof r.id === 'number' && r.adult !== true) this.cache.put(filmFromList(r));
     }
-    const f = filmFromDetails(j, region);
-    this.cache.films.set(id, f);
-    return f;
+    return this.cache.put(filmFromDetails(j, region));
+  }
+
+  /**
+   * Candidate background images for a film: its main backdrop first, then the
+   * best-rated other backdrops without text. TMDB does not say which of these
+   * are real scenes and which are poster artwork; see engine/scenes.ts.
+   */
+  async stills(f: Film, n = 5): Promise<string[]> {
+    const j = await this.get(`/movie/${f.id}/images`, { include_image_language: 'null' });
+    return rankStills(f.backdrop, j?.backdrops, n);
   }
 
   /** Details for many films; failures are skipped (the result may be shorter). */

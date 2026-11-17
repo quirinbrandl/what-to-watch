@@ -10,7 +10,7 @@ import { Entry, Film, labelOf } from '../core/models';
 
 import { Blank, Chip, Icon, IconName, Overlay, Poster, RoundButton, Stars } from './components';
 import { importZipFlow } from './Settings';
-import { C, sans, serif } from './theme';
+import { C, sans, display } from './theme';
 
 const GAP = 8;
 
@@ -28,7 +28,7 @@ export function FilmTile({ film, entry, width }: { film: Film; entry?: Entry; wi
       <Poster path={film.poster} radius={12} style={{ flex: 1 }} />
       {film.poster == null && (
         <View style={{ position: 'absolute', left: 6, right: 6, top: 0, bottom: 0, justifyContent: 'center' }}>
-          <Text style={[serif(15, C.dim), { textAlign: 'center' }]} numberOfLines={4}>
+          <Text style={[display(13, C.dim), { textAlign: 'center' }]} numberOfLines={4}>
             {film.title}
           </Text>
         </View>
@@ -87,7 +87,7 @@ export function LibraryScreen() {
       ListHeaderComponent={
         <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 16, paddingBottom: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={[serif(40), { flex: 1 }]} accessibilityRole="header">
+            <Text style={[display(34), { flex: 1 }]} accessibilityRole="header">
               Library
             </Text>
             {tab === 0 && <RoundButton icon={byRating ? 'star' : 'time-outline'} label={byRating ? 'Sorted by rating' : 'Sorted by date'} size={46} onPress={() => setByRating(!byRating)} />}

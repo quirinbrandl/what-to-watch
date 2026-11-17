@@ -35,10 +35,10 @@ The `android/` folder is committed and edited by hand (signing, trimmed permissi
 
 ## Store listing
 
-- **App name:** What to Watch
+- **App name:** WhatToWatch
 - **Short description (80):** Film picks that fit your taste. Posters first. Your data stays on your phone.
 - **Full description:**
-  What to Watch finds tonight's film. Tell it your mood, set a few filters, and swipe through full-screen posters picked for your personal taste. Flip a poster to see why it fits you.
+  WhatToWatch finds tonight's film. Tell it your mood, set a few filters, and swipe through full-screen posters picked for your personal taste. Flip a poster to see why it fits you.
 
   • Learns from your ratings, watched films and watchlist — import your Letterboxd export and keep it in sync automatically
   • Mood prompt, genres, years, length, language, familiar ↔ obscure

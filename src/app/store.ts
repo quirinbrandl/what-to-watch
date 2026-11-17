@@ -41,6 +41,8 @@ export interface Settings {
   onboarded: boolean;
   welcomeSeen: boolean;
   flipHintSeen: boolean;
+  /** How long each stage of a search took lately, in seconds (taste, scouting, checking, judging). Feeds the progress bar. */
+  stageSecs?: number[];
   request: Request;
 }
 
@@ -73,6 +75,7 @@ function settingsFromJson(j: any): Settings {
   s.onboarded = j?.onboarded === true;
   s.welcomeSeen = j?.welcomeSeen === true;
   s.flipHintSeen = j?.flipHintSeen === true;
+  if (Array.isArray(j?.stageSecs) && j.stageSecs.length === 4 && j.stageSecs.every((x: unknown) => typeof x === 'number' && x > 0 && x < 600)) s.stageSecs = j.stageSecs;
   if (j?.request) s.request = requestFromJson(j.request);
   return s;
 }
@@ -380,7 +383,7 @@ export class AppState extends Observable {
     } catch {
       throw new Error('Not a backup file.');
     }
-    if (j?.app !== 'what-to-watch' || typeof j.library !== 'object') throw new Error('Not a What to Watch backup.');
+    if (j?.app !== 'what-to-watch' || typeof j.library !== 'object') throw new Error('Not a WhatToWatch backup.');
     this.lib.replaceWith(Library.fromJson(j.library));
     if (j.settings) {
       const keep = this.settings;

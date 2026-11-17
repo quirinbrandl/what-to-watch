@@ -11,7 +11,7 @@ import { thud, tick } from '../app/platform';
 import { Film } from '../core/models';
 import { Tmdb } from '../core/tmdb';
 
-import { C, sans, serif } from './theme';
+import { C, sans, display } from './theme';
 
 export type IconName = React.ComponentProps<typeof Ionicons>['name'];
 export const Icon = Ionicons;
@@ -42,7 +42,7 @@ export function Poster({ path, label = '', radius = 12, size = 'w342', style }: 
   return (
     <View style={[{ borderRadius: radius, backgroundColor: '#17171B', alignItems: 'center', justifyContent: 'center', padding: 8 }, style]} accessible={!!label} accessibilityLabel={label || undefined}>
       {label ? (
-        <Text style={[serif(15, C.dim), { textAlign: 'center' }]} numberOfLines={4}>
+        <Text style={[display(13, C.dim), { textAlign: 'center' }]} numberOfLines={4}>
           {label}
         </Text>
       ) : (
@@ -75,6 +75,29 @@ function DriftColumn({ posters, width, speed, reverse }: { posters: string[]; wi
         <Poster key={i} path={p} radius={10} size="w185" style={{ width, height: width * 1.5, marginBottom: gap }} />
       ))}
     </Animated.View>
+  );
+}
+
+/** The logo: WTW on the icon's dark tile, the T in the accent colour. */
+export function Logo({ size = 28 }: { size?: number }) {
+  return (
+    <View style={{ width: size, height: size, borderRadius: size * 0.27, backgroundColor: C.tile, alignItems: 'center', justifyContent: 'center' }} importantForAccessibility="no-hide-descendants">
+      <Text style={[display(size * 0.45), { letterSpacing: 0 }]}>
+        W<Text style={{ color: C.accent }}>T</Text>W
+      </Text>
+    </View>
+  );
+}
+
+/** The app's name as it is written everywhere: one word, its middle part in the accent colour. */
+export function Wordmark({ size = 24, mark = false }: { size?: number; mark?: boolean }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: size * 0.36 }} accessible accessibilityRole="header" accessibilityLabel="WhatToWatch">
+      {mark && <Logo size={Math.round(size * 1.22)} />}
+      <Text style={[display(size), { flexShrink: 1 }]} numberOfLines={1} adjustsFontSizeToFit>
+        What<Text style={{ color: C.accent }}>To</Text>Watch
+      </Text>
+    </View>
   );
 }
 
@@ -225,9 +248,9 @@ export function RoundButton(props: { icon: IconName; label: string; onPress?: ()
               borderRadius: size / 2,
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: active ? 'rgba(255,200,87,0.16)' : pressed ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)',
+              backgroundColor: active ? C.accentSoft : pressed ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)',
               borderWidth: 1,
-              borderColor: active ? 'rgba(255,200,87,0.5)' : C.line,
+              borderColor: active ? C.accentLine : C.line,
             }}>
             <Icon name={icon} size={size * 0.42} color={color} />
           </View>
@@ -313,7 +336,7 @@ export function ProviderLogo({ logo, name, size = 34 }: { logo?: string | null; 
 /** TMDB user score as a ring. */
 export function ScoreRing({ film, size = 46 }: { film: Film; size?: number }) {
   const v = film.votes > 0 ? film.vote : 0;
-  const color = v >= 7 ? C.good : v >= 5.5 ? C.accent : C.danger;
+  const color = v >= 7 ? C.good : v >= 5.5 ? C.mid : C.danger;
   const pct = Math.round(v * 10);
   const stroke = 3.2;
   const r = (size - stroke) / 2;
@@ -348,7 +371,7 @@ export function Blank({ icon, title, action, onAction }: { icon: IconName; title
       <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center' }}>
         <Icon name={icon} size={34} color={C.dim} />
       </View>
-      <Text style={[serif(26), { textAlign: 'center', marginTop: 22 }]}>{title}</Text>
+      <Text style={[display(22), { textAlign: 'center', marginTop: 22 }]}>{title}</Text>
       {action && <BigButton label={action} onPress={onAction} style={{ marginTop: 22, paddingHorizontal: 34 }} />}
     </View>
   );

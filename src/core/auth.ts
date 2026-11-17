@@ -145,12 +145,12 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 function donePage(ok: boolean, returnUrl?: string): string {
   return (
-    '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>What to Watch</title></head>' +
+    '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WhatToWatch</title></head>' +
     '<body style="margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;' +
     'background:#0b0b0e;color:#f4f1ea;font:17px system-ui,sans-serif;text-align:center">' +
     `<div style="font-size:52px">${ok ? '&#10003;' : '&#10005;'}</div><div>${ok ? 'Signed in' : 'Sign-in was not completed'}</div>` +
     (returnUrl
-      ? `<a href="${esc(returnUrl)}" style="padding:14px 26px;border-radius:999px;background:#f4f1ea;color:#0b0b0e;text-decoration:none;font-weight:600">Back to What to Watch</a>` +
+      ? `<a href="${esc(returnUrl)}" style="padding:14px 26px;border-radius:999px;background:#f4f1ea;color:#0b0b0e;text-decoration:none;font-weight:600">Back to WhatToWatch</a>` +
         `<script>setTimeout(function(){location.href=${JSON.stringify(returnUrl)}},120)</script>`
       : '<div style="opacity:.6">You can close this tab.</div>') +
     '</body></html>'
@@ -185,7 +185,7 @@ export class ChatGptAuth {
   private refreshing?: Promise<string>;
   private fetchFn: typeof fetch;
 
-  constructor(private p: AuthPlatform, private appName = 'What to Watch') {
+  constructor(private p: AuthPlatform, private appName = 'WhatToWatch') {
     this.fetchFn = p.fetch ?? fetch;
   }
 

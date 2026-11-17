@@ -11,7 +11,8 @@ import { TasteModel } from '../engine/taste';
 import { LbFormatError, applyExport, applyRss, cleanUsername, matchScore, parseCsv, parseLetterboxdZip, parseRss } from '../letterboxd';
 import { extractJson, extractJsonLines } from '../llm';
 import { Film, Library, Prov, filmFromJson, filmToJson, makeFilm, nowSec } from '../models';
-import { FilmCache } from '../tmdb';
+import { parseScenes, sceneParts } from '../engine/scenes';
+import { FilmCache, rankStills } from '../tmdb';
 
 function film(id: number, title: string, o: Partial<Film> & { year?: number; flat?: Prov[]; region?: string } = {}): Film {
   const { year = 2015, flat = [], region = 'DE', ...rest } = o;
@@ -364,5 +365,47 @@ describe('privacy policy', () => {
     const { plainPrivacy } = await import('../../../tool/sync-privacy');
     const { PRIVACY_TEXT } = await import('../../app/privacy');
     assert.equal(PRIVACY_TEXT, plainPrivacy(readFileSync('PRIVACY.md', 'utf8')));
+  });
+});
+
+describe('background scenes', () => {
+  const backdrops = [
+    { file_path: '/main.jpg', iso_639_1: null, vote_average: 5.8, vote_count: 7 },
+    { file_path: '/titled.jpg', iso_639_1: 'en', vote_average: 9, vote_count: 50 },
+    { file_path: '/low.jpg', iso_639_1: null, vote_average: 2, vote_count: 3 },
+    { file_path: '/high.jpg', iso_639_1: null, vote_average: 5.7, vote_count: 29 },
+    { file_path: '/tie.jpg', iso_639_1: null, vote_average: 2, vote_count: 9 },
+  ];
+
+  test('candidates: main image first, then textless ones by rating', () => {
+    assert.deepEqual(rankStills('/main.jpg', backdrops), ['/main.jpg', '/high.jpg', '/tie.jpg', '/low.jpg']);
+    assert.deepEqual(rankStills('/main.jpg', backdrops, 2), ['/main.jpg', '/high.jpg']);
+    assert.deepEqual(rankStills(undefined, backdrops, 1), ['/main.jpg']);
+    assert.deepEqual(rankStills('/only.jpg', undefined), ['/only.jpg']);
+    assert.deepEqual(rankStills(undefined, 'nonsense'), []);
+  });
+
+  test('the model sees each film and its numbered images', () => {
+    const parts = sceneParts([{ film: film(1, 'Heat', { year: 1995 }), stills: ['/a.jpg', '/b.jpg'] }]);
+    assert.equal(parts.length, 5);
+    assert.match((parts[0] as { text: string }).text, /^Film 1: Heat \(1995\)\. 2 candidate images/);
+    assert.deepEqual(parts[2], { image: 'https://image.tmdb.org/t/p/w300/a.jpg' });
+    assert.deepEqual(parts[3], { text: 'Film 1, image 1:' });
+  });
+
+  test('choices are read per film; anything unusable falls back to the main image', () => {
+    const items = [1, 2, 3, 4].map((id) => ({ film: film(id, `F${id}`), stills: [`/${id}-0.jpg`, `/${id}-1.jpg`, `/${id}-2.jpg`] }));
+    const out = parseScenes('{"f":1,"scenes":[2],"pick":2}\n{"f":2,"scenes":[],"pick":7}\nnot json\n{"f":4,"scenes":[1],"pick":1}\n{"f":4,"scenes":[0],"pick":0}\n{"f":9,"pick":0}', items);
+    assert.deepEqual([...out], [[1, '/1-2.jpg'], [4, '/4-1.jpg'], [2, '/2-0.jpg'], [3, '/3-0.jpg']]);
+  });
+
+  test('a chosen scene survives saving and a refresh of the film', () => {
+    const f = film(7, 'Zodiac', { scene: '/scene.jpg' });
+    assert.equal(filmFromJson(filmToJson(f)).scene, '/scene.jpg');
+    assert.equal(filmFromJson(filmToJson(film(8, 'None', { scene: '' }))).scene, '');
+    assert.equal(filmFromJson(filmToJson(film(9, 'Undecided'))).scene, undefined);
+    const cache = new FilmCache();
+    cache.put(f);
+    assert.equal(cache.put(film(7, 'Zodiac', { vote: 8 })).scene, '/scene.jpg');
   });
 });

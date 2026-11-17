@@ -100,6 +100,8 @@ export interface Film {
   lang?: string;
   poster?: string;
   backdrop?: string;
+  /** A backdrop chosen because it shows a real scene, not poster artwork. '' = looked, none available. */
+  scene?: string;
   overview: string;
   vote: number;
   votes: number;
@@ -224,6 +226,7 @@ export function filmToJson(f: Film): Json {
   if (f.lang) j.l = f.lang;
   if (f.poster) j.p = f.poster;
   if (f.backdrop) j.b = f.backdrop;
+  if (f.scene !== undefined) j.sc = f.scene;
   if (f.overview) j.ov = f.overview;
   j.v = f.vote;
   j.n = f.votes;
@@ -255,6 +258,7 @@ export function filmFromJson(j: Json): Film {
     lang: j.l ?? undefined,
     poster: j.p ?? undefined,
     backdrop: j.b ?? undefined,
+    scene: typeof j.sc === 'string' ? j.sc : undefined,
     overview: j.ov ?? '',
     vote: Number(j.v ?? 0),
     votes: Math.trunc(Number(j.n ?? 0)),

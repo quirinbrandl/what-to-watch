@@ -13,7 +13,7 @@ import { LbFormatError, cleanUsername } from '../core/letterboxd';
 import { Prov, nowSec } from '../core/models';
 
 import { BigButton, Icon, IconName, PosterRibbon, ProviderLogo } from './components';
-import { C, caps, sans, serif } from './theme';
+import { C, caps, sans, display } from './theme';
 
 export const VERSION = '1.0.0';
 
@@ -81,7 +81,7 @@ export function ImportOverlay() {
         )}
       </View>
       <View style={{ alignItems: 'center', marginTop: 40 }} accessible accessibilityLiveRegion="polite" accessibilityLabel={`${p.label}, ${p.done} of ${p.total}`}>
-        <Text style={serif(32)}>{p.label}</Text>
+        <Text style={display(27)}>{p.label}</Text>
         <View style={{ width: 220, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.14)', marginTop: 16, overflow: 'hidden' }}>
           <View style={{ width: `${p.total ? (p.done / p.total) * 100 : 0}%`, height: 4, backgroundColor: C.accent }} />
         </View>
@@ -191,9 +191,9 @@ function Item(props: { icon: IconName; title: string; sub?: string; onPress?: ()
   );
 }
 
-const LICENSES = `What to Watch is open source under the MIT License.
+const LICENSES = `WhatToWatch is open source under the MIT License.
 
-Fonts: Instrument Serif and Manrope, SIL Open Font License 1.1.
+Fonts: Anton and Manrope, SIL Open Font License 1.1.
 
 Built with React Native, Expo, Reanimated, react-native-svg, fflate and noble-hashes (MIT License), and Ionicons (MIT License).
 
@@ -243,7 +243,7 @@ export function SettingsScreen() {
 
   return (
     <ScrollView contentContainerStyle={{ paddingTop: insets.top + 8, paddingHorizontal: 16, paddingBottom: insets.bottom + 110 }} showsVerticalScrollIndicator={false}>
-      <Text style={serif(40)} accessibilityRole="header">
+      <Text style={display(34)} accessibilityRole="header">
         Settings
       </Text>
       <Section title="ACCOUNT">
@@ -342,7 +342,7 @@ export function SettingsScreen() {
           <Text style={[sans(12.5, 'medium', C.dim, { lineHeight: 18 }), { marginTop: 8 }]}>Streaming availability is provided by JustWatch.</Text>
         </View>
         <Item icon="shield-checkmark-outline" title="Privacy" sub="Everything stays on this device" onPress={() => void ui.info('Privacy', PRIVACY_TEXT)} />
-        <Item icon="document-text-outline" title="Open-source licenses" sub={`What to Watch ${VERSION} · MIT`} onPress={() => void ui.info('Licenses', LICENSES)} />
+        <Item icon="document-text-outline" title="Open-source licenses" sub={`WhatToWatch ${VERSION} · MIT`} onPress={() => void ui.info('Licenses', LICENSES)} />
       </Section>
     </ScrollView>
   );
