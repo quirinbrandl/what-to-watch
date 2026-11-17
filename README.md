@@ -43,6 +43,8 @@ Results on one export (193 rated films, 88% of them ≥ 3★, model `gpt-6.1-sol
 
 How stable is this? An earlier run with a different fold split gave the blend 0.864 / 100% / 84% / 0 misses and the baseline 0.790 / 96% / 76% / 2 misses, and the taste model alone scores 0.82–0.84 over three repeated splits (`eval local`). So the ordering holds, while single numbers move by about ±0.02.
 
+Tried and rejected: running the judge at high instead of medium reasoning effort. On the same folds 165 of 193 predictions were identical, hit@10 and loved@10 did not change (blend AUC 0.857 vs 0.849), and each call took noticeably longer, so the app keeps medium (`npm run eval -- judge --effort high` repeats the comparison).
+
 A second check runs the whole pipeline blind: a fold of ratings is hidden completely (as if those films were unseen), the engine recommends freely from all of TMDB, and we look at the hidden films it happens to bring back (2 folds, 78 hidden films):
 
 | Hidden films… | n | ≥3★ | ≥4★ | mean rating |
@@ -57,7 +59,7 @@ This is one person and about 200 ratings, with only 23 films below 3★, so diff
 ```sh
 npm run eval -- local  --export <export folder or zip> [--ablate]   # taste model only, no LLM
 npm run eval -- signin                                              # ChatGPT sign-in for the CLI
-npm run eval -- judge  --export <…>                                 # held-out rating prediction
+npm run eval -- judge  --export <…> [--effort high]                 # held-out rating prediction
 npm run eval -- blind  --export <…> [--prompt "…"]                  # full pipeline on hidden ratings
 ```
 
