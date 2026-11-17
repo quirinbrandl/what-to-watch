@@ -19,7 +19,32 @@ export const VERSION = '1.0.0';
 
 const ZIP_TYPES = ['application/zip', 'application/x-zip-compressed', 'application/x-zip', 'application/octet-stream'];
 
-/** Picks a Letterboxd export ZIP and imports it. Progress shows in <ImportOverlay/>. */
+/** Letterboxd offers its data download only on the website, under Settings → Data. Its apps have no export. */
+export const LB_EXPORT_URL = 'https://letterboxd.com/settings/data/';
+export const LB_EXPORT_STEPS = [
+  'Open letterboxd.com in your browser and sign in. The Letterboxd app has no export.',
+  'Go to Settings, then Data, and tap Export your data.',
+  'Come back here and choose the ZIP file it downloaded.',
+];
+export const openLetterboxdExport = () => void Linking.openURL(LB_EXPORT_URL).catch(() => ui.toast('Could not open the browser'));
+
+/** The numbered how-to for getting your data out of Letterboxd. */
+export function ExportSteps() {
+  return (
+    <View style={{ gap: 9 }} accessible accessibilityLabel={`How to get your Letterboxd data. ${LB_EXPORT_STEPS.map((t, i) => `Step ${i + 1}: ${t}`).join(' ')}`}>
+      {LB_EXPORT_STEPS.map((t, i) => (
+        <View key={i} style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={sans(11.5, 'bold', C.ink)}>{i + 1}</Text>
+          </View>
+          <Text style={[sans(13.5, 'medium', C.dim, { lineHeight: 19 }), { flex: 1 }]}>{t}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Picks the ZIP file downloaded from Letterboxd and imports it. Progress shows in <ImportOverlay/>. */
 export async function importZipFlow(): Promise<boolean> {
   let picked: DocumentPicker.DocumentPickerResult;
   try {
@@ -258,9 +283,17 @@ export function SettingsScreen() {
         )}
         <Item
           icon="archive-outline"
-          title="Import export ZIP"
-          sub={lib.lbImportAt === undefined ? 'Letterboxd → Settings → Data → Export' : 'Ratings, watched, watchlist, likes, lists'}
+          title="Import your Letterboxd data"
+          sub={lib.lbImportAt === undefined ? 'Choose the ZIP file from letterboxd.com' : 'Ratings, watched, watchlist, likes, lists'}
           onPress={() => void importZipFlow()}
+        />
+        <Item
+          icon="help-circle-outline"
+          title="How to get your data"
+          sub="On the Letterboxd website, not in its app"
+          onPress={async () => {
+            if (await ui.confirm('Get your data from Letterboxd', LB_EXPORT_STEPS.map((t, i) => `${i + 1}. ${t}`).join('\n\n'), 'Open letterboxd.com')) openLetterboxdExport();
+          }}
         />
         {lib.lbGap && <Item icon="warning-outline" title="Some diary entries may be missing" sub="More than 50 were logged since the last sync. Import a fresh ZIP to fill the gap." warn />}
         {lib.unmatched.length > 0 && (

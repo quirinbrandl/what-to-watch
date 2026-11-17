@@ -9,7 +9,7 @@ import { apiKeyFlow, signInFlow, ui } from '../app/ui';
 import { cleanUsername } from '../core/letterboxd';
 
 import { BigButton, Chip, Icon, PosterWall } from './components';
-import { ServicesGrid, importZipFlow, pickRegion } from './Settings';
+import { ExportSteps, ServicesGrid, importZipFlow, openLetterboxdExport, pickRegion } from './Settings';
 import { C, sans, serif } from './theme';
 
 /** Three quick steps: sign in → Letterboxd → where you watch. */
@@ -84,14 +84,21 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
             <Text style={serif(48)} accessibilityRole="header">
               {imported ? 'Got your films' : 'Bring your\nLetterboxd'}
             </Text>
-            <Text style={[sans(imported ? 15 : 14, 'medium', C.dim), { marginTop: 12 }]}>
-              {imported ? `${lib.rated.length} ratings  ·  ${lib.watched.length} seen  ·  ${lib.watchlist.length} watchlist` : 'Settings → Data → Export on letterboxd.com'}
-            </Text>
+            {imported ? (
+              <Text style={[sans(15, 'medium', C.dim), { marginTop: 12 }]}>{`${lib.rated.length} ratings  ·  ${lib.watched.length} seen  ·  ${lib.watchlist.length} watchlist`}</Text>
+            ) : (
+              <View style={{ marginTop: 16, gap: 12, backgroundColor: 'rgba(8,8,10,0.78)', borderRadius: 20, padding: 14 }}>
+                <ExportSteps />
+                <View style={{ alignSelf: 'flex-start', marginLeft: 30 }}>
+                  <Chip label="Open letterboxd.com" icon="open-outline" onPress={openLetterboxdExport} />
+                </View>
+              </View>
+            )}
             {imported ? (
               <BigButton label="Continue" onPress={next} style={{ marginTop: 28 }} />
             ) : (
               <>
-                <BigButton label="Import export ZIP" icon="archive-outline" onPress={() => void importZipFlow()} style={{ marginTop: 28 }} />
+                <BigButton label="Choose the ZIP file" icon="archive-outline" onPress={() => void importZipFlow()} style={{ marginTop: 22 }} />
                 <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 29, height: 58, paddingLeft: 22, paddingRight: 6, marginTop: 12 }}>
                   <TextInput
                     value={user}

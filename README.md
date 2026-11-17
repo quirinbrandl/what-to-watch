@@ -65,7 +65,7 @@ npm run eval -- blind  --export <…> [--prompt "…"]                  # full p
 
 ## Letterboxd
 
-- **ZIP import:** drop in the whole export. The app finds `ratings.csv`, `watched.csv`, `watchlist.csv`, `diary.csv`, `reviews.csv`, `likes/films.csv`, favourite lists and `profile.csv` (username) by itself and matches every film to TMDB by title and year. Series that Letterboxd lists are not films on TMDB and stay unmatched.
+- **ZIP import:** get the file on the Letterboxd website (sign in at letterboxd.com → Settings → Data → Export your data; the Letterboxd apps have no export) and drop in the whole ZIP. The app finds `ratings.csv`, `watched.csv`, `watchlist.csv`, `diary.csv`, `reviews.csv`, `likes/films.csv`, favourite lists and `profile.csv` (username) by itself and matches every film to TMDB by title and year. Series that Letterboxd lists are not films on TMDB and stay unmatched.
 - **RSS sync:** on every app start, on return to the app and on pull-to-refresh, the app reads `letterboxd.com/<user>/rss/` and merges new diary entries.
 - **Rules for merging** (`src/core/models.ts`, `applyRss` in `src/core/letterboxd.ts`):
   - Letterboxd values and in-app values are stored separately; for each field **the latest change wins**.
