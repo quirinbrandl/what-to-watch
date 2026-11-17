@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "What to Watch",
+    "slug": "what-to-watch",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "whattowatch",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#08080A",
+    "icon": "./assets/icon/icon.png",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "dev.whattowatch.app"
+    },
+    "android": {
+      "package": "dev.whattowatch.app",
+      "versionCode": 1,
+      "allowBackup": false,
+      "predictiveBackGestureEnabled": false,
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0B0E",
+        "foregroundImage": "./assets/icon/icon_fg.png",
+        "monochromeImage": "./assets/icon/icon_mono.png"
+      }
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#08080A",
+          "image": "./assets/icon/splash.png",
+          "imageWidth": 200
+        }
+      ],
+      "expo-image",
+      "expo-secure-store",
+      "expo-sharing",
+      "expo-web-browser",
+      "expo-localization",
+      "expo-font"
+    ]
+  }
+}
