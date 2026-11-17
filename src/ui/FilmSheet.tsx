@@ -1,47 +1,71 @@
 import React, { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Linking, Pressable, Text, View } from 'react-native';
 
 import { app, useStore } from '../app/store';
 import { ui } from '../app/ui';
-import { Film, genreNames, streamable, yearOf } from '../core/models';
+import { Film, Prov, genreNames, yearOf } from '../core/models';
 
 import { BigButton, Chip, Icon, Poster, ProviderLogo, ScoreRing, Sheet, StarInput } from './components';
-import { C, runtimeLabel, sans, serif } from './theme';
+import { C, caps, runtimeLabel, sans, serif } from './theme';
 
 export const metaLine = (f: Film): string => [yearOf(f) ? String(yearOf(f)) : '', runtimeLabel(f.runtime), genreNames(f).slice(0, 3).join(', ')].filter(Boolean).join('  ·  ');
 
-/** Where a film can be streamed in the user's region; their own services first. */
+/**
+ * Where a film can be watched in the user's region, grouped by what it costs:
+ * included in a subscription, free, or rent/buy. The user's own services come
+ * first and carry a ring. Tapping opens TMDB's "watch" page for the film, which
+ * links on to each service (data: JustWatch via TMDB; it has no prices and no
+ * direct per-service links).
+ */
 export function ProviderRow({ film }: { film: Film }) {
   const sv = app.services;
   const p = film.prov;
   if (!p || p.region !== sv.region) return null;
+  const used = new Set<string>();
   // TMDB lists plan variants separately ("Netflix Standard with Ads"); show each service once.
-  const all = streamable(p);
-  const list = all
-    .filter((x) => !all.some((y) => y !== x && x.name.toLowerCase().startsWith(`${y.name.toLowerCase()} `)))
-    .sort((a, b) => (sv.has(b) ? 1 : 0) - (sv.has(a) ? 1 : 0));
-  if (!list.length) {
-    const paid = [...new Map([...p.rent, ...p.buy].map((x) => [x.id, x])).values()];
-    return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Icon name="tv-outline" size={15} color={C.faint} />
-        <Text style={sans(12.5, 'medium', C.dim)}>{paid.length ? 'Rent or buy' : `Not streaming in ${sv.region}`}</Text>
-        {paid.slice(0, 4).map((x) => (
-          <View key={x.id} style={{ opacity: 0.7 }}>
-            <ProviderLogo logo={x.logo} name={x.name} size={24} />
-          </View>
-        ))}
-      </View>
-    );
-  }
+  const group = (list: Prov[]): Prov[] =>
+    list
+      .filter((x) => !list.some((y) => y !== x && x.name.toLowerCase().startsWith(`${y.name.toLowerCase()} `)))
+      .filter((x) => !used.has(x.name) && used.add(x.name))
+      .sort((a, b) => (sv.has(b) ? 1 : 0) - (sv.has(a) ? 1 : 0))
+      .slice(0, 5);
+  const groups: [string, Prov[]][] = [
+    ['Subscription', group(p.flat)],
+    ['Free', group([...p.free, ...p.ads])],
+    ['Rent / buy', group([...p.rent, ...p.buy])],
+  ];
+  const shown = groups.filter(([, l]) => l.length > 0);
+  const link = p.link;
+  const summary = shown.length ? shown.map(([label, l]) => `${label}: ${l.map((x) => x.name).join(', ')}`).join('. ') : `Not available in ${sv.region}`;
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-      {list.slice(0, 6).map((x) => (
-        <View key={x.id} style={{ padding: 2, borderRadius: 11, borderWidth: 1.5, borderColor: sv.has(x) ? C.accent : 'transparent' }}>
-          <ProviderLogo logo={x.logo} name={x.name} size={32} />
+    <Pressable
+      accessibilityRole={link ? 'link' : 'text'}
+      accessibilityLabel={`Where to watch. ${summary}.`}
+      accessibilityHint={link ? 'Opens the list of offers' : undefined}
+      disabled={!link}
+      onPress={() => link && void Linking.openURL(link)}
+      // Keep this tap from also flipping the card it sits on.
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+      style={({ pressed }) => ({ backgroundColor: pressed ? 'rgba(255,255,255,0.12)' : C.soft, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, gap: 8 })}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Text style={[caps(), { flex: 1 }]}>WHERE TO WATCH</Text>
+        {link && <Icon name="open-outline" size={14} color={C.dim} />}
+      </View>
+      {shown.length === 0 && <Text style={sans(13, 'medium', C.dim)}>Not available to stream, rent or buy in {sv.region}</Text>}
+      {shown.map(([label, list]) => (
+        <View key={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={[sans(12.5, 'semi', label === 'Rent / buy' ? C.dim : C.ink), { width: 88 }]}>{label}</Text>
+          <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {list.map((x) => (
+              <View key={x.id} style={{ padding: 2, borderRadius: 10, borderWidth: 1.5, borderColor: sv.has(x) ? C.accent : 'transparent', opacity: label === 'Rent / buy' ? 0.75 : 1 }}>
+                <ProviderLogo logo={x.logo} name={x.name} size={28} />
+              </View>
+            ))}
+          </View>
         </View>
       ))}
-    </View>
+    </Pressable>
   );
 }
 
