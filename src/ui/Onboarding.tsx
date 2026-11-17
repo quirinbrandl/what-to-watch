@@ -62,7 +62,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <PosterWall posters={wall} dim={step === 0 ? 0.2 : 0.68} />
+      <PosterWall posters={wall} dim={step === 0 ? 0.2 : 0.82} />
       <View style={{ flex: 1, paddingTop: insets.top + 16, paddingHorizontal: 24, paddingBottom: insets.bottom + 20 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6 }} accessible accessibilityLabel={`Step ${step + 1} of 3`}>
           {[0, 1, 2].map((i) => (

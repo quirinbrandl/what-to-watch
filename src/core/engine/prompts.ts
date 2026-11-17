@@ -169,7 +169,7 @@ Output JSON Lines — one line per candidate, in the given order, nothing else:
 
 "r": predicted rating by this user, 0.5–5.
 "m": 0–10, fit to tonight's request text and soft preferences (10 = exactly what was asked for, 5 = loosely related, 0 = contradicts it). Without request text, judge how good an evening pick it is for this user.
-"why": at most 38 words, spoken to the user ("you"), concrete about why this film suits them and tonight's request: tone, craft, themes. Anchor it in their taste by referring to one or two films they rated 3.5★ or higher, using ONLY the tag form, e.g. "has the patient dread of [L12]" (the app prints the title). Never write the title of any film other than through a tag, never state star ratings, never invent facts about the user, and reveal nothing beyond the basic premise — no spoilers. If no honest anchor exists, describe the film's appeal for tonight without one.`;
+"why": at most 38 words, spoken to the user ("you"), concrete about why this film suits them and tonight's request: tone, craft, themes. Anchor it in their taste by referring to one or two films they rated 3.5★ or higher, using ONLY the tag form, e.g. "has the patient dread of [L12]" (the app prints the title). Never write the title of any film other than through a tag (a film the user names in tonight's request is the one exception), never state star ratings, never invent facts about the user, and reveal nothing beyond the basic premise — no spoilers. If no honest anchor exists, describe the film's appeal for tonight without one.`;
 
 export const judgeSystemGeneric = `You are the judging stage of a film recommender. Personalisation is off. For every candidate, estimate how much a general film lover would enjoy it and how well it fits tonight's request.
 
@@ -210,27 +210,36 @@ export interface Why {
 /**
  * Checks an LLM-written "why" against the user's real data. Every film it
  * refers to must be a tagged library film the user rated ≥ 3.5★; star
- * claims are not allowed (the app shows real ratings itself). Returns
- * undefined when the text fails, in which case a deterministic explanation
- * is used instead.
+ * claims are not allowed (the app shows real ratings itself). Sentences that
+ * fail are removed. Returns undefined when too little survives, in which
+ * case a deterministic explanation is used instead.
  */
 export function validateWhy(raw: string, tags: Record<string, number>, lib: Library, films: FilmCache): Why | undefined {
-  let text = raw.trim().replace(/\s+/g, ' ');
-  if (text.length < 12 || text.length > 420) return undefined;
-  if (/\d\s*(★|stars?\b|\/\s*5|out of)/.test(text) || text.includes('★')) return undefined;
-  let bad = false;
+  const clean = raw.trim().replace(/\s+/g, ' ');
+  if (clean.length < 12 || clean.length > 480) return undefined;
   const refs: number[] = [];
-  text = text.replace(/\[\s*(L\d+)\s*\]|\b(L\d+)\b/g, (_m, a, b) => {
-    const id = tags[a ?? b];
-    const e = id === undefined ? undefined : lib.get(id);
-    const f = id === undefined ? undefined : films.get(id);
-    if (!e || !f || (e.rating ?? 0) < 3.5) {
-      bad = true;
-      return '';
-    }
-    if (!refs.includes(id)) refs.push(id);
-    return f.title;
-  });
-  if (bad || text.includes('[') || text.includes(']')) return undefined;
-  return { text, refs };
+  const kept: string[] = [];
+  // Judge sentence by sentence: one unverifiable claim should not cost the
+  // user the rest of an otherwise sound explanation.
+  for (const sentence of clean.match(/[^.!?]+[.!?]*\s*/g) ?? [clean]) {
+    if (/\d\s*(★|stars?\b|\/\s*5|out of)/.test(sentence) || sentence.includes('★')) continue;
+    let bad = false;
+    const local: number[] = [];
+    const text = sentence.replace(/\[\s*(L\d+)\s*\]|\b(L\d+)\b/g, (_m, a, b) => {
+      const id = tags[a ?? b];
+      const e = id === undefined ? undefined : lib.get(id);
+      const f = id === undefined ? undefined : films.get(id);
+      if (!e || !f || (e.rating ?? 0) < 3.5) {
+        bad = true;
+        return '';
+      }
+      local.push(id);
+      return f.title;
+    });
+    if (bad || text.includes('[') || text.includes(']')) continue;
+    kept.push(text);
+    for (const id of local) if (!refs.includes(id)) refs.push(id);
+  }
+  const text = kept.join('').trim();
+  return text.length >= 40 || (text.length >= 12 && kept.length > 0 && text.length === clean.length) ? { text, refs } : undefined;
 }

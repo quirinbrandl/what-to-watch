@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
+import { Image, ImageStyle } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, GestureResponderEvent, LayoutChangeEvent, Pressable, ScrollView, StyleProp, StyleSheet, Text, View, ViewStyle, useWindowDimensions } from 'react-native';
@@ -18,26 +18,35 @@ export const Icon = Ionicons;
 
 // ---------------------------------------------------------------- posters
 
-/** A film poster. The art is the design, so this is used everywhere. */
+/**
+ * A film poster. The art is the design, so this is used everywhere. The
+ * image view rounds its own corners natively (no clipping wrapper), which
+ * keeps walls of moving posters cheap to draw.
+ */
 export function Poster({ path, label = '', radius = 12, size = 'w342', style }: { path?: string | null; label?: string; radius?: number; size?: string; style?: StyleProp<ViewStyle> }) {
+  if (path) {
+    return (
+      <Image
+        source={{ uri: Tmdb.img(path, size) }}
+        style={[{ borderRadius: radius, backgroundColor: '#17171B' }, style as StyleProp<ImageStyle>]}
+        contentFit="cover"
+        transition={220}
+        cachePolicy="disk"
+        recyclingKey={path}
+        accessible={!!label}
+        accessibilityRole={label ? 'image' : undefined}
+        accessibilityLabel={label ? `Poster: ${label}` : undefined}
+      />
+    );
+  }
   return (
-    <View
-      style={[{ borderRadius: radius, overflow: 'hidden', backgroundColor: '#17171B' }, style]}
-      accessible={!!label}
-      accessibilityRole={label ? 'image' : undefined}
-      accessibilityLabel={label ? `Poster: ${label}` : undefined}>
-      {path ? (
-        <Image source={{ uri: Tmdb.img(path, size) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={220} cachePolicy="disk" recyclingKey={path} />
+    <View style={[{ borderRadius: radius, backgroundColor: '#17171B', alignItems: 'center', justifyContent: 'center', padding: 8 }, style]} accessible={!!label} accessibilityLabel={label || undefined}>
+      {label ? (
+        <Text style={[serif(15, C.dim), { textAlign: 'center' }]} numberOfLines={4}>
+          {label}
+        </Text>
       ) : (
-        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', padding: 8 }]}>
-          {label ? (
-            <Text style={[serif(15, C.dim), { textAlign: 'center' }]} numberOfLines={4}>
-              {label}
-            </Text>
-          ) : (
-            <Icon name="film-outline" size={22} color={C.faint} />
-          )}
-        </View>
+        <Icon name="film-outline" size={22} color={C.faint} />
       )}
     </View>
   );
@@ -74,7 +83,7 @@ export const PosterWall = React.memo(function PosterWall({ posters, dim = 0.5 }:
   const { width, height } = useWindowDimensions();
   const cols = 4;
   const colW = (width * 1.5) / cols - 10;
-  const columns = useMemo(() => Array.from({ length: cols }, (_, c) => fill(posters.filter((_, i) => i % cols === c), Math.ceil((height * 1.5) / (colW * 1.5)) + 1).slice(0, 12)), [posters, height, colW]);
+  const columns = useMemo(() => Array.from({ length: cols }, (_, c) => fill(posters.filter((_, i) => i % cols === c), Math.ceil((height * 1.4) / (colW * 1.5 + 10)) + 1).slice(0, 9)), [posters, height, colW]);
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none" importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
       {posters.length > 0 && (
@@ -156,12 +165,15 @@ export function StarInput({ value, onChange, size = 46 }: { value?: number; onCh
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
       onResponderTerminationRequest={() => false}
-      onResponderGrant={(e) => {
-        moved.current = false;
-        start.current = value;
-        last.current = value;
-        set(at(e));
-      }}
+      onResponderGrant={
+        ((e: GestureResponderEvent) => {
+          moved.current = false;
+          start.current = value;
+          last.current = value;
+          set(at(e));
+          return true; // keep an enclosing scroll view from taking the drag
+        }) as (e: GestureResponderEvent) => void
+      }
       onResponderMove={(e) => {
         moved.current = true;
         set(at(e));
@@ -381,7 +393,12 @@ export function RangeSlider(props: { min: number; max: number; step?: number; lo
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
       onResponderTerminationRequest={() => false}
-      onResponderGrant={(e) => update(e, true)}
+      onResponderGrant={
+        ((e: GestureResponderEvent) => {
+          update(e, true);
+          return true; // keep the sheet from scrolling while a thumb is dragged
+        }) as (e: GestureResponderEvent) => void
+      }
       onResponderMove={(e) => update(e, false)}
       style={{ height: 44, justifyContent: 'center' }}>
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>

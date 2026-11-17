@@ -68,9 +68,16 @@ function Shell({ autoRun }: { autoRun: boolean }) {
   }, [autoRun]);
   const covered = ui.feed || ui.search;
   const tab = ui.tab;
+  // Once an overlay has faded in, stop drawing what it covers.
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    if (!covered) return setHidden(false);
+    const t = setTimeout(() => setHidden(true), 320);
+    return () => clearTimeout(t);
+  }, [covered]);
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flex: 1 }} importantForAccessibility={covered ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={covered}>
+      <View style={{ flex: 1, display: hidden ? 'none' : 'flex' }} importantForAccessibility={covered ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={covered}>
         <View style={{ flex: 1, display: tab === 'discover' ? 'flex' : 'none' }}>
           <DiscoverScreen />
         </View>

@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { GestureResponderEvent, Linking, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,7 +16,27 @@ import { Blank, Icon, IconName, Overlay, Poster, PosterRibbon, RoundButton, Scor
 import { ProviderRow, metaLine } from './FilmSheet';
 import { C, caps, sans, serif } from './theme';
 
-const MORE = 'more';
+// A native, GPU-drawn shadow under the card (elevation on Android).
+const SHADOW = { backgroundColor: '#101013', elevation: 18, shadowColor: '#000', shadowOpacity: 0.55, shadowRadius: 26, shadowOffset: { width: 0, height: 18 } };
+
+/**
+ * Tap detection that never becomes the touch responder, so a swipe that
+ * starts on the card always belongs to the list (paging stays native).
+ */
+function useTap(onTap: () => void) {
+  const start = useRef({ x: 0, y: 0, at: 0 });
+  return {
+    onTouchStart: (e: GestureResponderEvent) => {
+      start.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, at: Date.now() };
+    },
+    onTouchEnd: (e: GestureResponderEvent) => {
+      const s = start.current;
+      if (Date.now() - s.at < 400 && Math.abs(e.nativeEvent.pageX - s.x) < 14 && Math.abs(e.nativeEvent.pageY - s.y) < 14) onTap();
+    },
+    accessibilityActions: [{ name: 'activate' as const }],
+    onAccessibilityAction: onTap,
+  };
+}
 
 /** Results: one poster per screen, swipe up for the next, tap to flip. */
 export function FeedScreen() {
@@ -29,7 +49,6 @@ export function FeedScreen() {
   const generation = discover.generation;
   useEffect(() => setIndex(0), [generation]);
   const picks = s?.picks ?? [];
-  const data = useMemo<(Pick | typeof MORE)[]>(() => [...picks, MORE], [picks]);
   const at = Math.min(index, picks.length);
   const backdrop = s ? (picks[at] ?? picks[picks.length - 1])?.film.poster : undefined;
 
@@ -39,28 +58,28 @@ export function FeedScreen() {
   } else if (!picks.length && !discover.running) {
     body = <Blank icon="funnel-outline" title="No film fits all of that" action="Change filters" onAction={() => ui.closeFeed()} />;
   } else if (height > 0) {
+    // All pages stay mounted and memoised: paging is then purely native and
+    // nothing re-renders while a swipe is in flight.
+    const settle = (y: number) => {
+      const i = Math.round(y / height);
+      if (i !== index) {
+        tick();
+        setIndex(i);
+      }
+    };
     body = (
-      <FlatList
-        key={discover.generation}
-        data={data}
-        keyExtractor={(p) => (p === MORE ? MORE : String(p.film.id))}
-        renderItem={({ item, index: i }) => (item === MORE ? <MorePage session={s} height={height} /> : <PickPage pick={item} height={height} first={i === 0} />)}
+      <ScrollView
+        key={generation}
         pagingEnabled
-        decelerationRate="fast"
         showsVerticalScrollIndicator={false}
-        getItemLayout={(_, i) => ({ length: height, offset: height * i, index: i })}
-        initialNumToRender={2}
-        maxToRenderPerBatch={2}
-        windowSize={3}
-        scrollEventThrottle={32}
-        onScroll={(e) => {
-          const i = Math.round(e.nativeEvent.contentOffset.y / height);
-          if (i !== index) {
-            tick();
-            setIndex(i);
-          }
-        }}
-      />
+        overScrollMode="never"
+        onMomentumScrollEnd={(e) => settle(e.nativeEvent.contentOffset.y)}
+        onScrollEndDrag={(e) => settle(e.nativeEvent.targetContentOffset?.y ?? e.nativeEvent.contentOffset.y)}>
+        {picks.map((p, i) => (
+          <PickPage key={p.film.id} pick={p} height={height} first={i === 0} />
+        ))}
+        <MorePage session={s} height={height} />
+      </ScrollView>
     );
   }
 
@@ -117,7 +136,8 @@ function Problem() {
   return <Blank icon="cloud-offline-outline" title={discover.error} action="Try again" onAction={() => void discover.start()} />;
 }
 
-function PickPage({ pick, height, first }: { pick: Pick; height: number; first: boolean }) {
+const PickPage = React.memo(function PickPage({ pick, height, first }: { pick: Pick; height: number; first: boolean }) {
+  useStore(app);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [flipped, setFlipped] = useState(false);
@@ -146,14 +166,15 @@ function PickPage({ pick, height, first }: { pick: Pick; height: number; first: 
     opacity: flip.value >= 0.5 ? 1 : 0,
     transform: [{ perspective: 1400 }, { rotateY: `${flip.value * 180 + 180}deg` }, { scale: 1 - 0.07 * Math.sin(flip.value * Math.PI) }],
   }));
+  const tap = useTap(toggle);
   const card = { position: 'absolute' as const, width: cardW, height: cardH, borderRadius: 28 };
 
   return (
     <View style={{ height, paddingTop: top, paddingBottom: insets.bottom + 14 }}>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <View style={{ width: cardW, height: cardH }}>
-          <Animated.View style={[card, { boxShadow: '0 22px 50px rgba(0,0,0,0.6)' }, front]} pointerEvents={flipped ? 'none' : 'auto'}>
-            <Pressable onPress={toggle} accessibilityRole="button" accessibilityLabel={`${labelOf(f)}. Tap to flip for details.`} style={{ flex: 1 }}>
+          <Animated.View style={[card, SHADOW, front]} pointerEvents={flipped ? 'none' : 'auto'}>
+            <View {...tap} accessible accessibilityRole="button" accessibilityLabel={`${labelOf(f)}. Tap to flip for details.`} style={{ flex: 1 }}>
               <Poster path={f.poster} radius={28} size="w780" style={{ flex: 1 }} />
               {first && !app.settings.flipHintSeen && (
                 <View style={{ position: 'absolute', bottom: 22, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.glass, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: C.line }}>
@@ -161,7 +182,7 @@ function PickPage({ pick, height, first }: { pick: Pick; height: number; first: 
                   <Text style={sans(12.5, 'bold')}>Tap to flip</Text>
                 </View>
               )}
-            </Pressable>
+            </View>
           </Animated.View>
           <Animated.View style={[card, { overflow: 'hidden', backgroundColor: '#121215', borderWidth: 1, borderColor: C.line }, back]} pointerEvents={flipped ? 'auto' : 'none'}>
             {flipped && <Back pick={pick} onFlip={toggle} />}
@@ -197,17 +218,28 @@ function PickPage({ pick, height, first }: { pick: Pick; height: number; first: 
       </View>
     </View>
   );
-}
+});
 
 /** Back of the card: the facts, and why this film fits this user. */
 function Back({ pick: p, onFlip }: { pick: Pick; onFlip: () => void }) {
   const f = p.film;
+  // Scroll inside the card only when the text does not fit; otherwise a
+  // swipe on the card should move on to the next film.
+  const tap = useTap(onFlip);
+  const [box, setBox] = useState(0);
+  const [content, setContent] = useState(0);
   return (
     <>
       {f.poster && <Image source={{ uri: Tmdb.img(f.poster, 'w185') }} style={[StyleSheet.absoluteFill, { opacity: 0.3 }]} contentFit="cover" blurRadius={50} />}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(14,14,17,0.72)' }]} />
-      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 26 }}>
-        <Pressable onPress={onFlip} accessibilityRole="button" accessibilityHint="Flips back to the poster">
+      <ScrollView
+        nestedScrollEnabled
+        scrollEnabled={content > box + 1}
+        onLayout={(e) => setBox(e.nativeEvent.layout.height)}
+        onContentSizeChange={(_, h) => setContent(h)}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ padding: 22, paddingBottom: 26 }}>
+        <View {...tap} accessible accessibilityRole="button" accessibilityHint="Flips back to the poster">
           <Text style={serif(34)}>{f.title}</Text>
           <Text style={[sans(13, 'medium', C.dim, { lineHeight: 19 }), { marginTop: 10 }]}>{metaLine(f)}</Text>
           {f.directors.length > 0 && <Text style={[sans(13, 'semi'), { marginTop: 4 }]}>Directed by {f.directors.slice(0, 2).join(', ')}</Text>}
@@ -264,7 +296,7 @@ function Back({ pick: p, onFlip }: { pick: Pick; onFlip: () => void }) {
               <Text style={sans(14, 'medium', C.dim, { lineHeight: 21 })}>{f.overview}</Text>
             </>
           )}
-        </Pressable>
+        </View>
       </ScrollView>
     </>
   );

@@ -3,9 +3,13 @@
 ## Build
 
 ```sh
-flutter build appbundle --release      # build/app/outputs/bundle/release/app-release.aab
-flutter build apk --release            # build/app/outputs/flutter-apk/app-release.apk (sideloading)
+npm install
+cd android
+./gradlew bundleRelease     # app/build/outputs/bundle/release/app-release.aab  (upload this)
+./gradlew assembleRelease   # app/build/outputs/apk/release/app-release.apk     (sideloading)
 ```
+
+Use JDK 17 or 21 (`JAVA_HOME`) and set `ANDROID_HOME` to the Android SDK.
 
 Release builds are signed with the keystore described in `android/key.properties` (git-ignored):
 
@@ -23,9 +27,11 @@ keytool -genkeypair -v -keystore android/upload-keystore.jks -storetype JKS \
   -keyalg RSA -keysize 2048 -validity 10000 -alias upload
 ```
 
-Without `key.properties` the release build falls back to debug signing so that `flutter run --release` still works.
+Without `key.properties` the release build is signed with the debug key, so it can be installed for testing but not uploaded.
 
-Before the first upload: pick your final `applicationId` in `android/app/build.gradle.kts` (currently `dev.whattowatch.app`; it can never change after publishing) and bump `version:` in `pubspec.yaml` for every upload.
+Before the first upload: pick your final application id (`applicationId` and `namespace` in `android/app/build.gradle`, `android.package` and `scheme` in `app.json`, the `<data android:scheme>` in the manifest and `AUTH_RETURN_URL` in `src/app/platform.ts`; currently `dev.whattowatch.app`). It can never change after publishing. Bump `versionCode`/`versionName` in `android/app/build.gradle` for every upload.
+
+The `android/` folder is committed and edited by hand (signing, trimmed permissions). Do not run `expo prebuild --clean`, which would regenerate it.
 
 ## Store listing
 
@@ -62,10 +68,10 @@ Before the first upload: pick your final `applicationId` in `android/app/build.g
 - **Ads:** none. **In-app purchases:** none.
 - **Content rating:** film posters and descriptions of all kinds can appear (adult-flagged titles are filtered out); answer the questionnaire accordingly (user-generated content: no).
 - **Target audience:** 13+ (not directed at children).
-- **Permissions:** `INTERNET` only.
+- **Permissions:** `INTERNET` and `VIBRATE` (haptics) only.
 - **TMDB:** attribution lives in Settings → About, as TMDB's terms require. The embedded TMDB token is read-only.
 - **OpenAI:** the sign-in button label, first-run notice and "Manage usage" link follow the Sign in with ChatGPT UI guidelines.
 
 ## iOS later
 
-The code base is Flutter; `ios/` is already generated. For iOS: set the bundle id and signing team in Xcode, add the `whattowatch` URL scheme to `Info.plist` (return from sign-in), run `dart run flutter_launcher_icons`, and build with `flutter build ipa`.
+The app is React Native (Expo modules), so iOS needs no rewrite: run `npx expo prebuild --platform ios`, set the signing team in Xcode and build. The native sign-in listener has a Swift implementation (`modules/loopback-auth/ios`) that mirrors the Android one but has not been run on a device yet.

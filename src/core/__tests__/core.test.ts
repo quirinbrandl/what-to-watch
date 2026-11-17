@@ -291,6 +291,12 @@ describe('explanations', () => {
     assert.equal(validateWhy('You loved [L2], so this is for you.', tags, lib, cache), undefined);
     assert.equal(validateWhy('You gave [L1] 5 stars, so this is for you.', tags, lib, cache), undefined);
   });
+  test('keeps the sound sentences and drops the unverifiable one', () => {
+    const w = validateWhy('A tense, patient thriller with the slow-burn dread of [L1]. You also adored [L2]. Dry humour keeps it light.', tags, lib, cache)!;
+    assert.equal(w.text, 'A tense, patient thriller with the slow-burn dread of Loved Film. Dry humour keeps it light.');
+    assert.deepEqual(w.refs, [1]);
+    assert.equal(validateWhy('You adored [L2]. Fun.', tags, lib, cache), undefined, 'too little left');
+  });
   test('taste brief hides held-out films and tags the rest', () => {
     const b = tasteBrief(lib, cache, undefined, { tagged: true, hide: new Set([2]) });
     assert.ok(b.text.includes('[L1] Loved Film (2015)'));

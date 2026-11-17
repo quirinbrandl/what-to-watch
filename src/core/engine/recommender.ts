@@ -270,7 +270,8 @@ export class Recommender {
     const show = (stage: Stage, fs: Iterable<Film | undefined>) => {
       const posters: Film[] = [];
       for (const f of fs) {
-        if (f && f.poster && !shown.has(f.id) && lib.get(f.id)?.watched !== true && !postered.has(f.id)) {
+        // Only films that can still make it: the wait screen shows real candidates.
+        if (f && f.poster && !postered.has(f.id) && rejectReason(f, r, lib, this.sv, { shown, listLevel: true }) === undefined) {
           postered.add(f.id);
           posters.push(f);
         }
