@@ -111,7 +111,7 @@ export function DiscoverScreen() {
             {r.excludeWatchlist && <Chip label="Not on watchlist" onPress={sheet} />}
             {r.recent && <Chip label="New releases" onPress={sheet} />}
           </GestureScrollView>
-          <BigButton label="Find films" icon="sparkles" onPress={go} color={C.accent} ink={C.accentInk} style={{ marginTop: 10, marginHorizontal: 2, marginBottom: 2 }} />
+          <BigButton label="Find films" icon="search" onPress={go} color={C.accent} ink={C.accentInk} style={{ marginTop: 10, marginHorizontal: 2, marginBottom: 2 }} />
         </View>
       </View>
     </View>
