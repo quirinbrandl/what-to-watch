@@ -8,6 +8,8 @@ Tell it your mood, set a few filters and swipe through full-screen posters picke
 - **Honest:** every film is a real TMDB title, hard filters are enforced by code, and the "why" only refers to films you actually rated.
 - **Local-first:** no backend, no account with us, no analytics. Your library lives on your phone. See [PRIVACY.md](PRIVACY.md).
 - **Bring your own model:** "Continue with ChatGPT" uses your ChatGPT plan; an OpenAI API key works too (Settings → Advanced).
+- **Per search, not per account:** the streaming services are a filter like any other — Disney+ tonight with friends, only Netflix tomorrow. The country is guessed from the phone's time zone (no location access, no extra network call) and can be changed next to the services.
+- **Nothing found twice:** every search is kept on the phone (the last 20). "Your searches" on the home screen brings one back instantly, with its films and their order.
 
 ## How recommendations are made
 
@@ -69,7 +71,7 @@ npm run eval -- blind  --export <…> [--prompt "…"]                  # full p
 
 ## Letterboxd
 
-- **ZIP import:** get the file on the Letterboxd website (sign in at letterboxd.com → Settings → Data → Export your data; the Letterboxd apps have no export) and drop in the whole ZIP. The app finds `ratings.csv`, `watched.csv`, `watchlist.csv`, `diary.csv`, `reviews.csv`, `likes/films.csv`, favourite lists and `profile.csv` (username) by itself and matches every film to TMDB by title and year. Series that Letterboxd lists are not films on TMDB and stay unmatched.
+- **ZIP import:** get the file on the Letterboxd website (sign in at letterboxd.com → Settings → Data → Export your data; the Letterboxd apps have no export) and drop in the whole ZIP. The app finds `ratings.csv`, `watched.csv`, `watchlist.csv`, `diary.csv`, `reviews.csv`, `likes/films.csv`, favourite lists and `profile.csv` (username) by itself and matches every film to TMDB by title and year. Series that Letterboxd lists are not films on TMDB and stay unmatched. Before importing, the app asks whether the Letterboxd watchlist should come in too; without it, films that are only on the watchlist are left out.
 - **RSS sync:** on every app start, on return to the app and on pull-to-refresh, the app reads `letterboxd.com/<user>/rss/` and merges new diary entries.
 - **Rules for merging** (`src/core/models.ts`, `applyRss` in `src/core/letterboxd.ts`):
   - Letterboxd values and in-app values are stored separately; for each field **the latest change wins**.

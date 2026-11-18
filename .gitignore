@@ -22,5 +22,8 @@ ios/
 !android/app/debug.keystore
 android/key.properties
 
+# Claude Code worktrees
+.claude/
+
 # Local evaluation data and caches (personal data — never commit)
 .eval_cache/

@@ -3,6 +3,7 @@ import { Linking, Pressable, Text, View } from 'react-native';
 
 import { app, useStore } from '../app/store';
 import { ui } from '../app/ui';
+import { Services } from '../core/engine/request';
 import { Film, Prov, genreNames, yearOf } from '../core/models';
 
 import { BigButton, Chip, Icon, Poster, ProviderLogo, ScoreRing, Sheet, StarInput } from './components';
@@ -12,13 +13,12 @@ export const metaLine = (f: Film): string => [yearOf(f) ? String(yearOf(f)) : ''
 
 /**
  * Where a film can be watched in the user's region, grouped by what it costs:
- * included in a subscription, free, or rent/buy. The user's own services come
- * first and carry a ring. Tapping opens TMDB's "watch" page for the film, which
+ * included in a subscription, free, or rent/buy. The services the search was
+ * limited to come first and carry a ring. Tapping opens TMDB's "watch" page for the film, which
  * links on to each service (data: JustWatch via TMDB; it has no prices and no
  * direct per-service links).
  */
-export function ProviderRow({ film }: { film: Film }) {
-  const sv = app.services;
+export function ProviderRow({ film, sv = app.services }: { film: Film; sv?: Services }) {
   const p = film.prov;
   if (!p || p.region !== sv.region) return null;
   const used = new Set<string>();

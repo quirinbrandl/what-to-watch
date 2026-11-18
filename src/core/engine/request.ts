@@ -12,13 +12,14 @@ export interface Request {
   langs: string[]; // original language, any of
   obscurity: number; // 0 = familiar … 1 = obscure
   excludeWatched: boolean;
+  excludeWatchlist: boolean; // leave out films on the user's watchlist
   personalize: boolean;
   streamingOnly: boolean; // only films on the user's services
   seedId?: number; // "more like this"
 }
 
 export function newRequest(r: Partial<Request> = {}): Request {
-  return { prompt: '', genres: [], notGenres: [], langs: [], obscurity: 0.5, excludeWatched: true, personalize: true, streamingOnly: false, ...r };
+  return { prompt: '', genres: [], notGenres: [], langs: [], obscurity: 0.5, excludeWatched: true, excludeWatchlist: false, personalize: true, streamingOnly: false, ...r };
 }
 
 export const hasPrompt = (r: Request): boolean => r.prompt.trim().length > 0;
@@ -45,6 +46,7 @@ export function requestFromJson(j: any): Request {
     langs: Array.isArray(j?.langs) ? j.langs : [],
     obscurity: typeof j?.obscurity === 'number' ? j.obscurity : 0.5,
     excludeWatched: j?.excludeWatched !== false,
+    excludeWatchlist: j?.excludeWatchlist === true,
     personalize: j?.personalize !== false,
     streamingOnly: j?.streamingOnly === true,
     seedId: j?.seedId ?? undefined,
@@ -95,6 +97,7 @@ export function rejectReason(f: Film, r: Request, lib: Library, sv: Services, op
   if (e) {
     if (e.notInterested) return 'not interested';
     if (r.excludeWatched && e.watched) return 'watched';
+    if (r.excludeWatchlist && e.watchlist) return 'watchlist';
   }
   const y = yearOf(f);
   if (r.yearMin !== undefined && (y === undefined || y < r.yearMin)) return 'year';

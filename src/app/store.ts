@@ -1,13 +1,15 @@
-import { getLocales } from 'expo-localization';
+import { getCalendars, getLocales } from 'expo-localization';
 import { useSyncExternalStore } from 'react';
 import { AppState as NativeAppState } from 'react-native';
 
 import { AuthError, ChatGptAuth } from '../core/auth';
 import { Recommender, engineConfig } from '../core/engine/recommender';
 import { Request, Services, newRequest, requestFromJson } from '../core/engine/request';
-import { LbNotFound, applyExport, applyRss, cleanUsername, fetchRss, matchExport, parseLetterboxdZip, seedMatches } from '../core/letterboxd';
+import { Service } from '../core/history';
+import { LbExport, LbNotFound, applyExport, applyRss, cleanUsername, dropWatchlistOnly, fetchRss, matchExport, seedMatches } from '../core/letterboxd';
 import { Llm, LlmError, LlmModel } from '../core/llm';
 import { Film, Library, Prov } from '../core/models';
+import { guessRegion } from '../core/region';
 import { FilmCache, Tmdb } from '../core/tmdb';
 
 import { AUTH_RETURN_URL, authPlatform, files, secrets } from './platform';
@@ -32,10 +34,20 @@ export function useStore<T extends Observable>(store: T): T {
   return store;
 }
 
+/** ISO 3166 regions where TMDB has watch-provider data, by display name. */
+export const REGIONS: Record<string, string> = {
+  AR: 'Argentina', AU: 'Australia', AT: 'Austria', BE: 'Belgium', BR: 'Brazil', CA: 'Canada', CL: 'Chile',
+  CO: 'Colombia', CZ: 'Czechia', DK: 'Denmark', FI: 'Finland', FR: 'France', DE: 'Germany', GR: 'Greece',
+  HK: 'Hong Kong', HU: 'Hungary', IN: 'India', ID: 'Indonesia', IE: 'Ireland', IL: 'Israel', IT: 'Italy',
+  JP: 'Japan', MX: 'Mexico', NL: 'Netherlands', NZ: 'New Zealand', NO: 'Norway', PH: 'Philippines', PL: 'Poland',
+  PT: 'Portugal', RO: 'Romania', SG: 'Singapore', ZA: 'South Africa', KR: 'South Korea', ES: 'Spain', SE: 'Sweden',
+  CH: 'Switzerland', TW: 'Taiwan', TH: 'Thailand', TR: 'Türkiye', GB: 'United Kingdom', US: 'United States',
+};
+
 export interface Settings {
   region: string;
-  providers: Record<number, string>; // my streaming services: id -> name
-  providerLogos: Record<number, string | null>;
+  /** The streaming services picked in the filter for the next search; empty = anywhere. */
+  services: Service[];
   model?: string;
   useApiKey: boolean;
   onboarded: boolean;
@@ -46,18 +58,25 @@ export interface Settings {
   request: Request;
 }
 
+/** Where the phone is, from its time zone and language settings; no location access, no network. */
 function deviceRegion(): string {
+  let timeZone: string | null | undefined;
+  let localeRegion: string | null | undefined;
   try {
-    const r = getLocales()[0]?.regionCode;
-    if (r && r.length === 2) return r.toUpperCase();
+    timeZone = getCalendars()[0]?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   } catch {}
-  return 'US';
+  try {
+    localeRegion = getLocales()[0]?.regionCode;
+  } catch {}
+  return guessRegion({ timeZone, localeRegion }, REGIONS);
 }
+
+/** Services as the recommender wants them: id → name. */
+export const servicesOf = (region: string, list: Service[]): Services => new Services(region, Object.fromEntries(list.map((x) => [x.id, x.name])));
 
 const newSettings = (): Settings => ({
   region: deviceRegion(),
-  providers: {},
-  providerLogos: {},
+  services: [],
   useApiKey: false,
   onboarded: false,
   welcomeSeen: false,
@@ -68,8 +87,12 @@ const newSettings = (): Settings => ({
 function settingsFromJson(j: any): Settings {
   const s = newSettings();
   if (typeof j?.region === 'string') s.region = j.region;
-  s.providers = { ...(j?.providers ?? {}) };
-  s.providerLogos = { ...(j?.providerLogos ?? {}) };
+  if (Array.isArray(j?.services)) {
+    s.services = j.services.filter((x: any) => x && typeof x.id === 'number' && typeof x.name === 'string').map((x: any) => ({ id: x.id, name: x.name, logo: x.logo ?? null }));
+  } else if (j?.request?.streamingOnly === true && j?.providers) {
+    // Older versions kept "my services" in Settings and switched them on per search.
+    s.services = Object.entries(j.providers as Record<string, string>).map(([id, name]) => ({ id: Number(id), name: String(name), logo: j.providerLogos?.[id] ?? null }));
+  }
   s.model = j?.model ?? undefined;
   s.useApiKey = j?.useApiKey === true;
   s.onboarded = j?.onboarded === true;
@@ -77,6 +100,7 @@ function settingsFromJson(j: any): Settings {
   s.flipHintSeen = j?.flipHintSeen === true;
   if (Array.isArray(j?.stageSecs) && j.stageSecs.length === 4 && j.stageSecs.every((x: unknown) => typeof x === 'number' && x > 0 && x < 600)) s.stageSecs = j.stageSecs;
   if (j?.request) s.request = requestFromJson(j.request);
+  s.request.streamingOnly = s.services.length > 0;
   return s;
 }
 
@@ -111,8 +135,9 @@ export class AppState extends Observable {
   private saveTimer?: ReturnType<typeof setTimeout>;
   private filmTimer?: ReturnType<typeof setTimeout>;
 
+  /** The streaming services of the filter, for the next search. */
   get services(): Services {
-    return new Services(this.settings.region, this.settings.providers);
+    return servicesOf(this.settings.region, this.settings.services);
   }
   get hasLlm(): boolean {
     return this.settings.useApiKey ? !!this.apiKey : this.auth.signedIn;
@@ -156,10 +181,14 @@ export class AppState extends Observable {
     }, 3000);
   }
 
+  /** Only for moving the single saved session of older versions into the search history. */
   readSession = () => files.read('session');
-  writeSession(j: unknown | undefined): void {
-    if (j === undefined) files.remove('session');
-    else files.write('session', j).catch(() => {});
+  removeSession = () => files.remove('session');
+
+  readSearches = () => files.read('searches');
+  writeSearches(j: unknown | undefined): void {
+    if (j === undefined) files.remove('searches');
+    else files.write('searches', j).catch(() => {});
   }
 
   // ------------------------------------------------------------ LLM access
@@ -281,8 +310,9 @@ export class AppState extends Observable {
 
   // ------------------------------------------------------------ Letterboxd
 
-  async importZip(bytes: Uint8Array): Promise<void> {
-    const ex = parseLetterboxdZip(bytes);
+  /** Imports a parsed export. Without `watchlist`, films that are only on the Letterboxd watchlist stay out. */
+  async importExport(ex: LbExport, opts: { watchlist: boolean }): Promise<void> {
+    if (!opts.watchlist) dropWatchlistOnly(ex);
     const posters: string[] = [];
     const progress = (label: string, done: number, total: number) => {
       this.importing = { label, done, total, posters: [...posters] };
@@ -345,26 +375,31 @@ export class AppState extends Observable {
 
   // ------------------------------------------------------------ region
 
-  providerCatalog = (): Promise<Prov[]> => this.tmdb.providerCatalog(this.settings.region);
+  providerCatalog = (region = this.settings.region): Promise<Prov[]> => this.tmdb.providerCatalog(region);
 
+  /** A new country: keeps the picked services that are offered there too. */
   setRegion(region: string): void {
     if (region === this.settings.region) return;
     this.settings.region = region;
-    this.settings.providers = {};
-    this.settings.providerLogos = {};
     this.rec.sv = this.services;
     this.changed();
+    void this.providerCatalog(region)
+      .then((c) => {
+        if (this.settings.region !== region) return;
+        const offered = new Set(c.map((p) => p.id));
+        this.setServices(this.settings.services.filter((x) => offered.has(x.id)));
+      })
+      .catch(() => {});
   }
 
-  toggleProvider(p: Prov): void {
-    const s = this.settings;
-    if (p.id in s.providers) {
-      delete s.providers[p.id];
-      delete s.providerLogos[p.id];
-    } else {
-      s.providers[p.id] = p.name;
-      s.providerLogos[p.id] = p.logo;
-    }
+  toggleService(p: Prov): void {
+    const on = this.settings.services.some((x) => x.id === p.id);
+    this.setServices(on ? this.settings.services.filter((x) => x.id !== p.id) : [...this.settings.services, { id: p.id, name: p.name, logo: p.logo }]);
+  }
+
+  setServices(list: Service[]): void {
+    this.settings.services = list;
+    this.settings.request.streamingOnly = list.length > 0;
     this.rec.sv = this.services;
     this.changed();
   }
@@ -410,19 +445,9 @@ export class AppState extends Observable {
     this.films.films.clear();
     this.settings = newSettings();
     this.rec.sv = this.services;
-    for (const n of ['library', 'settings', 'films', 'session']) files.remove(n);
+    for (const n of ['library', 'settings', 'films', 'session', 'searches']) files.remove(n);
     this.notify();
   }
 }
 
 export const app = new AppState();
-
-/** ISO 3166 regions where TMDB has watch-provider data, by display name. */
-export const REGIONS: Record<string, string> = {
-  AR: 'Argentina', AU: 'Australia', AT: 'Austria', BE: 'Belgium', BR: 'Brazil', CA: 'Canada', CL: 'Chile',
-  CO: 'Colombia', CZ: 'Czechia', DK: 'Denmark', FI: 'Finland', FR: 'France', DE: 'Germany', GR: 'Greece',
-  HK: 'Hong Kong', HU: 'Hungary', IN: 'India', ID: 'Indonesia', IE: 'Ireland', IL: 'Israel', IT: 'Italy',
-  JP: 'Japan', MX: 'Mexico', NL: 'Netherlands', NZ: 'New Zealand', NO: 'Norway', PH: 'Philippines', PL: 'Poland',
-  PT: 'Portugal', RO: 'Romania', SG: 'Singapore', ZA: 'South Africa', KR: 'South Korea', ES: 'Spain', SE: 'Sweden',
-  CH: 'Switzerland', TW: 'Taiwan', TH: 'Thailand', TR: 'Türkiye', GB: 'United Kingdom', US: 'United States',
-};

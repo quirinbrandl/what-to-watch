@@ -122,6 +122,7 @@ export function requestBrief(r: Request, sv: Services, seed?: Film): string {
     }.`,
   );
   if (!r.excludeWatched) lines.push('Rewatches are allowed: films the user has already seen may be suggested when they fit.');
+  if (r.excludeWatchlist) lines.push("Films on the user's WATCHLIST are excluded tonight: do not propose them.");
   return lines.join('\n').trim();
 }
 

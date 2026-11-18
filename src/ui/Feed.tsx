@@ -1,8 +1,10 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useRef, useState } from 'react';
-import { GestureResponderEvent, Linking, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { GestureResponderEvent, Linking, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { GestureDetector, ScrollView as GestureScrollView, PanGesture, usePanGesture } from 'react-native-gesture-handler';
+import Animated, { Easing, cancelAnimation, useAnimatedStyle, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { discover } from '../app/discover';
@@ -21,9 +23,12 @@ import { Scouting } from './Wait';
 // A native, GPU-drawn shadow under the card (elevation on Android).
 const SHADOW = { backgroundColor: '#101013', elevation: 18, shadowColor: '#000', shadowOpacity: 0.55, shadowRadius: 26, shadowOffset: { width: 0, height: 18 } };
 
+/** The swipe between films, so the text on a flipped card can scroll without paging. */
+const PagerSwipe = createContext<PanGesture | undefined>(undefined);
+
 /**
  * Tap detection that never becomes the touch responder, so a swipe that
- * starts on the card always belongs to the list (paging stays native).
+ * starts on the card always belongs to the pager.
  */
 function useTap(onTap: () => void) {
   const start = useRef({ x: 0, y: 0, at: 0 });
@@ -49,9 +54,79 @@ export function FeedScreen() {
   const [index, setIndex] = useState(0);
   const s = discover.session;
   const generation = discover.generation;
-  useEffect(() => setIndex(0), [generation]);
   const picks = s?.picks ?? [];
   const at = Math.min(index, picks.length);
+
+  // One film per screen. `pos` is the page on show, fractional while a finger
+  // moves it; on release it springs to the next or previous film, carrying the
+  // speed of the flick.
+  const pos = useSharedValue(0);
+  const from = useSharedValue(0);
+  const pageH = useSharedValue(1);
+  const last = useSharedValue(0); // index of the "more" page
+  const shown = useRef(0);
+  useEffect(() => {
+    last.value = picks.length;
+  }, [picks.length, last]);
+  useEffect(() => {
+    shown.current = 0;
+    setIndex(0);
+    cancelAnimation(pos);
+    pos.value = 0;
+  }, [generation, pos]);
+  useEffect(() => {
+    // A film was removed from the end: stay on a page that exists.
+    if (index > picks.length) {
+      shown.current = picks.length;
+      setIndex(picks.length);
+      pos.value = withTiming(picks.length, { duration: 260 });
+    }
+  }, [picks.length, index, pos]);
+  const settle = (i: number) => {
+    if (i === shown.current) return;
+    shown.current = i;
+    tick();
+    setIndex(i);
+  };
+  const go = (d: number) => {
+    const i = Math.max(0, Math.min(picks.length, shown.current + d));
+    pos.value = withTiming(i, { duration: 320, easing: Easing.out(Easing.cubic) });
+    settle(i);
+  };
+  const pager = usePanGesture(
+    useMemo(
+      () => ({
+        activeOffsetY: [-10, 10] as [number, number],
+        failOffsetX: [-24, 24] as [number, number],
+        onActivate: () => {
+          'worklet';
+          cancelAnimation(pos);
+          from.value = pos.value;
+        },
+        onUpdate: (e: { translationY: number }) => {
+          'worklet';
+          let p = from.value - e.translationY / pageH.value;
+          // Resist before the first film and after the last page.
+          if (p < 0) p *= 0.22;
+          if (p > last.value) p = last.value + (p - last.value) * 0.22;
+          pos.value = p;
+        },
+        onDeactivate: (e: { velocityY: number }) => {
+          'worklet';
+          const start = Math.round(from.value);
+          let to = Math.round(pos.value);
+          if (e.velocityY < -380) to = Math.ceil(pos.value - 0.02);
+          else if (e.velocityY > 380) to = Math.floor(pos.value + 0.02);
+          to = Math.max(0, Math.min(last.value, Math.max(start - 1, Math.min(start + 1, to))));
+          pos.value = withSpring(to, { damping: 32, stiffness: 260, mass: 1, overshootClamping: true, velocity: -e.velocityY / pageH.value });
+          scheduleOnRN(settle, to);
+        },
+      }),
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [],
+    ),
+  );
+  const slide = useAnimatedStyle(() => ({ transform: [{ translateY: -pos.value * pageH.value }] }));
   const current = s ? (picks[at] ?? picks[picks.length - 1])?.film : undefined;
   // Have the next backgrounds ready before they are swiped to.
   const scenes = picks.map((p) => p.film.scene).filter((x): x is string => !!x).join(' ');
@@ -65,34 +140,39 @@ export function FeedScreen() {
   } else if (!picks.length && !discover.running) {
     body = <Blank icon="funnel-outline" title="No film fits all of that" action="Change filters" onAction={() => ui.closeFeed()} />;
   } else if (height > 0) {
-    // All pages stay mounted and memoised: paging is then purely native and
-    // nothing re-renders while a swipe is in flight.
-    const settle = (y: number) => {
-      const i = Math.round(y / height);
-      if (i !== index) {
-        tick();
-        setIndex(i);
-      }
-    };
+    // All pages stay mounted and memoised: nothing re-renders while a swipe
+    // is in flight; the whole column moves on the UI thread.
     body = (
-      <ScrollView
-        key={generation}
-        pagingEnabled
-        showsVerticalScrollIndicator={false}
-        overScrollMode="never"
-        onMomentumScrollEnd={(e) => settle(e.nativeEvent.contentOffset.y)}
-        onScrollEndDrag={(e) => settle(e.nativeEvent.targetContentOffset?.y ?? e.nativeEvent.contentOffset.y)}>
-        {picks.map((p, i) => (
-          <PickPage key={p.film.id} pick={p} height={height} first={i === 0} />
-        ))}
-        <MorePage session={s} height={height} />
-      </ScrollView>
+      <PagerSwipe.Provider value={pager}>
+        <GestureDetector gesture={pager}>
+          <View
+            key={generation}
+            style={{ flex: 1, overflow: 'hidden' }}
+            accessibilityActions={[
+              { name: 'next', label: 'Next film' },
+              { name: 'previous', label: 'Previous film' },
+            ]}
+            onAccessibilityAction={(e) => go(e.nativeEvent.actionName === 'next' ? 1 : -1)}>
+            <Animated.View style={[{ height: height * (picks.length + 1) }, slide]}>
+              {picks.map((p, i) => (
+                <PickPage key={p.film.id} pick={p} height={height} first={i === 0} />
+              ))}
+              <MorePage session={s} height={height} />
+            </Animated.View>
+          </View>
+        </GestureDetector>
+      </PagerSwipe.Provider>
     );
   }
 
   return (
     <Overlay>
-      <View style={{ flex: 1 }} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
+      <View
+        style={{ flex: 1 }}
+        onLayout={(e) => {
+          setHeight(e.nativeEvent.layout.height);
+          pageH.value = e.nativeEvent.layout.height;
+        }}>
         {current && <Backdrop film={current} />}
         {body}
         <View style={{ position: 'absolute', top: insets.top + 6, left: 10, right: 16, flexDirection: 'row', alignItems: 'center' }} pointerEvents="box-none">
@@ -249,22 +329,16 @@ const PickPage = React.memo(function PickPage({ pick, height, first }: { pick: P
 /** Back of the card: the facts, and why this film fits this user. */
 function Back({ pick: p, onFlip }: { pick: Pick; onFlip: () => void }) {
   const f = p.film;
-  // Scroll inside the card only when the text does not fit; otherwise a
-  // swipe on the card should move on to the next film.
+  // A swipe that starts on the flipped card scrolls its text and never moves
+  // on to another film, even at the end of the text; a swipe beside the card
+  // does.
   const tap = useTap(onFlip);
-  const [box, setBox] = useState(0);
-  const [content, setContent] = useState(0);
+  const pager = useContext(PagerSwipe);
   return (
     <>
       {f.poster && <Image source={{ uri: Tmdb.img(f.poster, 'w185') }} style={[StyleSheet.absoluteFill, { opacity: 0.3 }]} contentFit="cover" blurRadius={50} />}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(14,14,17,0.72)' }]} />
-      <ScrollView
-        nestedScrollEnabled
-        scrollEnabled={content > box + 1}
-        onLayout={(e) => setBox(e.nativeEvent.layout.height)}
-        onContentSizeChange={(_, h) => setContent(h)}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 22, paddingBottom: 26 }}>
+      <GestureScrollView block={pager} overScrollMode="never" showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 26, flexGrow: 1 }}>
         <View {...tap} accessible accessibilityRole="button" accessibilityHint="Flips back to the poster">
           <Text style={display(28)}>{f.title}</Text>
           <Text style={[sans(13, 'medium', C.dim, { lineHeight: 19 }), { marginTop: 10 }]}>{metaLine(f)}</Text>
@@ -284,7 +358,7 @@ function Back({ pick: p, onFlip }: { pick: Pick; onFlip: () => void }) {
             )}
           </View>
           <View style={{ marginTop: 16 }}>
-            <ProviderRow film={f} />
+            <ProviderRow film={f} sv={discover.services} />
           </View>
           <Text style={[caps(C.accent), { marginTop: 22, marginBottom: 8 }]}>WHY IT FITS</Text>
           <Text style={sans(16, 'medium', C.ink, { lineHeight: 24 })}>{p.why}</Text>
@@ -323,7 +397,7 @@ function Back({ pick: p, onFlip }: { pick: Pick; onFlip: () => void }) {
             </>
           )}
         </View>
-      </ScrollView>
+      </GestureScrollView>
     </>
   );
 }

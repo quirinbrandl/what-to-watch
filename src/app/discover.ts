@@ -1,15 +1,18 @@
 import { Pick, Progress, STAGES, Session, Stage } from '../core/engine/recommender';
 import { pickScenes } from '../core/engine/scenes';
-import { copyRequest } from '../core/engine/request';
+import { Services, copyRequest } from '../core/engine/request';
+import { SavedSearch, addSearch, historyFromJson, historyToJson } from '../core/history';
 import { LlmError } from '../core/llm';
 import { Film } from '../core/models';
 import { TmdbError } from '../core/tmdb';
 
-import { Observable, app } from './store';
+import { Observable, app, servicesOf } from './store';
 
-/** Drives one discovery session for the UI. */
+/** Drives discovery for the UI: the search on screen, and the searches kept on the device. */
 export class Discover extends Observable {
   session?: Session;
+  searches: SavedSearch[] = []; // newest first
+  currentId?: string; // the saved search that `session` belongs to
   running = false;
   loadingMore = false;
   stage?: Stage;
@@ -27,43 +30,109 @@ export class Discover extends Observable {
   generation = 0; // bumped for every new session (resets the feed)
   private run = 0;
 
+  /** The saved search on screen. */
+  get current(): SavedSearch | undefined {
+    return this.searches.find((e) => e.id === this.currentId);
+  }
+
+  /** The streaming services the search on screen was limited to (they get a ring on the cards). */
+  get services(): Services {
+    const c = this.current;
+    return c ? servicesOf(c.region, c.services) : app.services;
+  }
+
   async restore(): Promise<void> {
     try {
-      const j = await app.readSession();
-      if (j && !this.session && !this.running) {
-        const s = Session.fromJson(j, app.films);
-        if (s.picks.length) {
-          this.session = s;
-          void this.scenes();
-        }
-        // A restored pick must show complete details; refresh any that the
-        // film cache only holds in list form.
-        for (const p of s.picks) {
-          if (!p.film.full) {
-            void app.ensureFilm(p.film.id).then((f) => {
-              if (f?.full) {
-                p.film = f;
-                this.notify();
-                app.notify();
-              }
-            });
+      let { list, current } = historyFromJson(await app.readSearches(), app.films);
+      let moved = false;
+      if (!list.length) {
+        // Versions before the search history kept only the last session.
+        const old = await app.readSession();
+        if (old) {
+          const s = Session.fromJson(old, app.films);
+          if (s.picks.length) {
+            const e: SavedSearch = {
+              id: newId(),
+              at: Date.now(),
+              region: app.settings.region,
+              services: s.request.streamingOnly ? [...app.settings.services] : [],
+              session: s,
+            };
+            list = [e];
+            current = e.id;
+            moved = true;
           }
         }
+      }
+      // A search that finished while this was loading stays on top.
+      this.searches = [...this.searches, ...list.filter((e) => !this.searches.some((x) => x.id === e.id))];
+      if (!this.session && !this.running && current) this.show(current);
+      if (moved) {
+        this.persist();
+        app.removeSession();
       }
     } catch {}
     this.notify();
   }
 
+  /** Opens a saved search: its films are back on screen at once, no new search needed. */
+  open(id: string): void {
+    if (!this.searches.some((e) => e.id === id)) return;
+    if (this.running) this.cancel();
+    this.error = undefined;
+    this.llmError = undefined;
+    this.show(id);
+    this.generation++;
+    this.persist();
+    this.notify();
+  }
+
+  /** Deletes a saved search. */
+  forget(id: string): void {
+    this.searches = this.searches.filter((e) => e.id !== id);
+    if (this.currentId === id) {
+      this.currentId = undefined;
+      if (!this.running) this.session = undefined;
+    }
+    this.persist();
+    this.notify();
+  }
+
+  private show(id: string): void {
+    const e = this.searches.find((x) => x.id === id)!;
+    this.currentId = id;
+    this.session = e.session;
+    void this.scenes();
+    // A saved pick must show complete details; refresh any that the film
+    // cache only holds in list form.
+    for (const p of e.session.picks) {
+      if (!p.film.full) {
+        void app.ensureFilm(p.film.id).then((f) => {
+          if (f?.full) {
+            p.film = f;
+            this.notify();
+            app.notify();
+          }
+        });
+      }
+    }
+  }
+
   /** Starts a fresh session from the current request, or "more like" `seed`. */
   async start(seed?: Film): Promise<void> {
     const r = copyRequest(app.settings.request);
+    const region = app.settings.region;
+    const services = [...app.settings.services];
+    r.streamingOnly = services.length > 0;
     if (seed) {
       r.seedId = seed.id;
       r.prompt = '';
     }
     if (this.running) this.cancel();
     this.session = undefined;
+    this.currentId = undefined;
     this.generation++;
+    app.rec.sv = servicesOf(region, services);
     await this.go(async (run) => {
       const s = await app.rec.start(r, (p) => this.progress(run, p));
       if (run !== this.run) return;
@@ -77,12 +146,27 @@ export class Discover extends Observable {
         if (run !== this.run) return;
       }
       this.session = s;
+      if (s.picks.length) {
+        const e: SavedSearch = {
+          id: newId(),
+          at: Date.now(),
+          region,
+          services,
+          seedTitle: seed?.title,
+          session: s,
+        };
+        this.searches = addSearch(this.searches, e);
+        this.currentId = e.id;
+      }
     });
   }
 
   async more(): Promise<void> {
     const s = this.session;
     if (!s || this.running) return;
+    // "More" keeps to the streaming services of the search it continues.
+    const c = this.current;
+    app.rec.sv = c ? servicesOf(c.region, c.services) : app.services;
     this.loadingMore = true;
     await this.go((run) => app.rec.more(s, (p) => this.progress(run, p)).then(() => {}));
     this.loadingMore = false;
@@ -107,9 +191,12 @@ export class Discover extends Observable {
     this.persist();
   }
 
+  /** Forgets everything: used by "Delete everything" and when a backup replaces the library. */
   clear(): void {
     this.session = undefined;
-    app.writeSession(undefined);
+    this.searches = [];
+    this.currentId = undefined;
+    app.writeSearches(undefined);
     this.notify();
   }
 
@@ -182,7 +269,11 @@ export class Discover extends Observable {
    * verdicts, their count is the clock. It slows down instead of finishing
    * early when a stage runs long.
    */
-  progressNow(now = Date.now()): { fraction: number; secondsLeft: number; late: boolean } {
+  progressNow(now = Date.now()): {
+    fraction: number;
+    secondsLeft: number;
+    late: boolean;
+  } {
     if (this.reveal) return { fraction: 1, secondsLeft: 0, late: false };
     const b = app.settings.stageSecs ?? STAGE_SECS;
     const i = Math.max(0, STAGES.indexOf(this.stage ?? 'taste'));
@@ -201,7 +292,11 @@ export class Discover extends Observable {
       left = Math.max(1, (all - n) * each - (now - this.verdictAt[1]) / 1000);
       late = false;
     }
-    return { fraction: Math.min(0.99, (before + within * b[i]) / total), secondsLeft: left, late };
+    return {
+      fraction: Math.min(0.99, (before + within * b[i]) / total),
+      secondsLeft: left,
+      late,
+    };
   }
 
   /** Remembers how long the stages took, so the next progress bar is closer to the truth. */
@@ -229,11 +324,12 @@ export class Discover extends Observable {
   }
 
   private persist(): void {
-    app.writeSession(this.session?.toJson());
+    app.writeSearches(historyToJson(this.searches, this.currentId));
   }
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const newId = () => `${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 /** How long the wait screen shows the chosen films before the feed opens. */
 const REVEAL_MS = 1500;
 /** Typical stage lengths in seconds before any search has been timed on this device. */
@@ -243,8 +339,14 @@ const timeShare = (f: number) => (f < 0.8 ? f : 0.8 + 0.19 * (1 - Math.exp(-(f -
 
 export const discover = new Discover();
 
-// The films of the current session must not be pruned from the film cache.
+// The films of the saved searches must not be pruned from the film cache.
+// Films held in reserve for "more" are kept for the three newest searches.
 app.pinned = () => {
-  const s = discover.session;
-  return s ? [...s.picks, ...s.reserve].flatMap((p) => [p.film.id, ...p.anchors.map((a) => a.id)]) : [];
+  const ids: number[] = [];
+  const add = (s: Session, reserve: boolean) => {
+    for (const p of reserve ? [...s.picks, ...s.reserve] : s.picks) ids.push(p.film.id, ...p.anchors.map((a) => a.id));
+  };
+  if (discover.session) add(discover.session, true);
+  discover.searches.forEach((e, i) => add(e.session, i < 3));
+  return ids;
 };

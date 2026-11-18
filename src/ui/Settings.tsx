@@ -1,18 +1,18 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
-import React, { ReactNode, useEffect, useState } from 'react';
+import React, { ReactNode } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { discover } from '../app/discover';
 import { files, tick } from '../app/platform';
 import { PRIVACY_TEXT } from '../app/privacy';
-import { REGIONS, app, useStore } from '../app/store';
+import { app, useStore } from '../app/store';
 import { apiKeyFlow, signInFlow, ui } from '../app/ui';
-import { LbFormatError, cleanUsername } from '../core/letterboxd';
-import { Prov, nowSec } from '../core/models';
+import { LbExport, LbFormatError, cleanUsername, parseLetterboxdZip } from '../core/letterboxd';
+import { nowSec } from '../core/models';
 
-import { BigButton, Icon, IconName, PosterRibbon, ProviderLogo } from './components';
+import { BigButton, Icon, IconName, PosterRibbon } from './components';
 import { C, caps, sans, display } from './theme';
 
 export const VERSION = '1.0.0';
@@ -44,7 +44,10 @@ export function ExportSteps() {
   );
 }
 
-/** Picks the ZIP file downloaded from Letterboxd and imports it. Progress shows in <ImportOverlay/>. */
+/**
+ * Picks the ZIP file downloaded from Letterboxd, asks whether the watchlist
+ * should come in too, and imports it. Progress shows in <ImportOverlay/>.
+ */
 export async function importZipFlow(): Promise<boolean> {
   let picked: DocumentPicker.DocumentPickerResult;
   try {
@@ -54,12 +57,28 @@ export async function importZipFlow(): Promise<boolean> {
     return false;
   }
   if (picked.canceled) return false;
+  let ex: LbExport;
   try {
-    await app.importZip(await files.bytes(picked.assets[0].uri));
-    ui.toast(`${app.lib.rated.length} ratings · ${app.lib.watchlist.length} on your watchlist`);
-    return true;
+    ex = parseLetterboxdZip(await files.bytes(picked.assets[0].uri));
   } catch (e) {
-    ui.toast(e instanceof LbFormatError ? e.message : 'The import did not finish. Check your connection and try again.');
+    ui.toast(e instanceof LbFormatError ? e.message : 'That file could not be read.');
+    return false;
+  }
+  const what = await ui.choose(
+    'What should come in?',
+    [
+      { key: 'all', label: 'Ratings and watchlist', sub: `${ex.ratings} ratings · ${ex.watchlist} films on your watchlist` },
+      { key: 'ratings', label: 'Only ratings', sub: `${ex.ratings} ratings and the films you have seen, without the watchlist` },
+    ],
+    'all',
+  );
+  if (!what) return false;
+  try {
+    await app.importExport(ex, { watchlist: what === 'all' });
+    ui.toast(what === 'all' ? `${app.lib.rated.length} ratings · ${app.lib.watchlist.length} on your watchlist` : `${app.lib.rated.length} ratings imported`);
+    return true;
+  } catch {
+    ui.toast('The import did not finish. Check your connection and try again.');
     return false;
   }
 }
@@ -89,65 +108,6 @@ export function ImportOverlay() {
           {p.done} / {p.total}
         </Text>
       </View>
-    </View>
-  );
-}
-
-export async function pickRegion(): Promise<void> {
-  const items = Object.entries(REGIONS)
-    .sort((a, b) => a[1].localeCompare(b[1]))
-    .map(([key, label]) => ({ key, label }));
-  const r = await ui.choose('Region', items, app.settings.region);
-  if (r) app.setRegion(r);
-}
-
-/** Logos of the region's streaming services; tap to mark the ones you have. */
-export function ServicesGrid() {
-  useStore(app);
-  const region = app.settings.region;
-  const [catalog, setCatalog] = useState<Prov[] | undefined>();
-  const [failed, setFailed] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    setCatalog(undefined);
-    app
-      .providerCatalog()
-      .then((c) => alive && setCatalog(c))
-      .catch(() => alive && setCatalog([]));
-    return () => {
-      alive = false;
-    };
-  }, [region, failed]);
-  if (!catalog) return <ActivityIndicator color={C.dim} style={{ height: 120 }} />;
-  if (!catalog.length) {
-    return (
-      <Pressable accessibilityRole="button" onPress={() => setFailed(failed + 1)} style={{ height: 80, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}>
-        <Icon name="refresh" size={16} color={C.dim} />
-        <Text style={sans(13.5, 'semi', C.dim)}>Could not load services — retry</Text>
-      </Pressable>
-    );
-  }
-  const mine = app.settings.providers;
-  const list = [...catalog.filter((p) => p.id in mine), ...catalog.filter((p) => !(p.id in mine)).slice(0, 28)];
-  return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-      {list.map((p) => {
-        const on = p.id in mine;
-        return (
-          <Pressable
-            key={p.id}
-            accessibilityRole="checkbox"
-            accessibilityLabel={p.name}
-            accessibilityState={{ checked: on }}
-            onPress={() => {
-              tick();
-              app.toggleProvider(p);
-            }}
-            style={{ padding: 3, borderRadius: 17, borderWidth: 2.4, borderColor: on ? C.accent : 'transparent', opacity: on ? 1 : 0.55 }}>
-            <ProviderLogo logo={p.logo} name={p.name} size={52} />
-          </Pressable>
-        );
-      })}
     </View>
   );
 }
@@ -284,7 +244,7 @@ export function SettingsScreen() {
         <Item
           icon="archive-outline"
           title="Import your Letterboxd data"
-          sub={lib.lbImportAt === undefined ? 'Choose the ZIP file from letterboxd.com' : 'Ratings, watched, watchlist, likes, lists'}
+          sub={lib.lbImportAt === undefined ? 'Choose the ZIP file from letterboxd.com' : 'Ratings, and your watchlist if you want it'}
           onPress={() => void importZipFlow()}
         />
         <Item
@@ -299,12 +259,6 @@ export function SettingsScreen() {
         {lib.unmatched.length > 0 && (
           <Item icon="help-circle-outline" title={`${lib.unmatched.length} not matched`} sub="Mostly series, which are not films on TMDB" onPress={() => void ui.info('Not matched', lib.unmatched.join('\n'))} />
         )}
-      </Section>
-      <Section title="WHERE YOU WATCH">
-        <Item icon="globe-outline" title="Region" sub={REGIONS[s.region] ?? s.region} onPress={() => void pickRegion()} />
-        <View style={{ paddingHorizontal: 12, paddingTop: 6, paddingBottom: 14 }}>
-          <ServicesGrid />
-        </View>
       </Section>
       <Section title="ADVANCED">
         <Item

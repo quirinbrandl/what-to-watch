@@ -1,27 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, Text, TextInput, View, useWindowDimensions } from 'react-native';
-import { ScrollView } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { REGIONS, app, useStore } from '../app/store';
+import { app, useStore } from '../app/store';
 import { apiKeyFlow, signInFlow, ui } from '../app/ui';
 import { cleanUsername } from '../core/letterboxd';
 
 import { BigButton, Chip, Icon, PosterWall, Wordmark } from './components';
-import { ExportSteps, ServicesGrid, importZipFlow, openLetterboxdExport, pickRegion } from './Settings';
+import { ExportSteps, importZipFlow, openLetterboxdExport } from './Settings';
 import { C, sans, display } from './theme';
 
-/** Three quick steps: sign in → Letterboxd → where you watch. */
+/** Two quick steps: sign in → Letterboxd. Streaming services are picked per search, in the filters. */
 export function Onboarding({ onDone }: { onDone: () => void }) {
   useStore(app);
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
   const [step, setStep] = useState(app.hasLlm ? 1 : 0);
   const [busy, setBusy] = useState(false);
   const [wall, setWall] = useState<string[]>([]);
   const [user, setUser] = useState('');
   const next = () => setStep((s) => s + 1);
+  const finish = () => {
+    app.settings.onboarded = true;
+    app.changed();
+    onDone();
+  };
 
   useEffect(() => {
     let alive = true;
@@ -49,7 +52,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   const useUsername = () => {
     if (!cleanUsername(user)) return ui.toast('That does not look like a username');
     app.setUsername(user);
-    next();
+    finish();
   };
 
   const lib = app.lib;
@@ -64,8 +67,8 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <PosterWall posters={wall} dim={step === 0 ? 0.2 : 0.82} />
       <View style={{ flex: 1, paddingTop: insets.top + 16, paddingHorizontal: 24, paddingBottom: insets.bottom + 20 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6 }} accessible accessibilityLabel={`Step ${step + 1} of 3`}>
-          {[0, 1, 2].map((i) => (
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6 }} accessible accessibilityLabel={`Step ${step + 1} of 2`}>
+          {[0, 1].map((i) => (
             <View key={i} style={{ width: i === step ? 22 : 6, height: 6, borderRadius: 3, backgroundColor: i <= step ? C.ink : 'rgba(255,255,255,0.27)' }} />
           ))}
         </View>
@@ -93,7 +96,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               </View>
             )}
             {imported ? (
-              <BigButton label="Continue" onPress={next} style={{ marginTop: 28 }} />
+              <BigButton label={app.hasLlm ? 'Show me films' : 'Done'} icon="sparkles" color={C.accent} ink={C.accentInk} onPress={finish} style={{ marginTop: 28 }} />
             ) : (
               <>
                 <BigButton label="Choose the ZIP file" icon="archive-outline" onPress={() => void importZipFlow()} style={{ marginTop: 22 }} />
@@ -115,34 +118,9 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                     <Icon name="arrow-forward" size={20} color={C.ink} />
                   </Pressable>
                 </View>
-                {link('Skip', next)}
+                {link('Skip', finish)}
               </>
             )}
-          </Animated.View>
-        )}
-        {step === 2 && (
-          <Animated.View key="s2" entering={FadeInDown.duration(320)}>
-            <Text style={display(40)} accessibilityRole="header">
-              {'Where do\nyou watch?'}
-            </Text>
-            <View style={{ alignSelf: 'flex-start', marginTop: 18 }}>
-              <Chip label={REGIONS[app.settings.region] ?? app.settings.region} icon="globe-outline" onPress={() => void pickRegion()} />
-            </View>
-            <ScrollView style={{ maxHeight: height * 0.36, marginTop: 18 }} showsVerticalScrollIndicator={false}>
-              <ServicesGrid />
-            </ScrollView>
-            <BigButton
-              label={app.hasLlm ? 'Show me films' : 'Done'}
-              icon="sparkles"
-              color={C.accent}
-              ink={C.accentInk}
-              style={{ marginTop: 26 }}
-              onPress={() => {
-                app.settings.onboarded = true;
-                app.changed();
-                onDone();
-              }}
-            />
           </Animated.View>
         )}
       </View>

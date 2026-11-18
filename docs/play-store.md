@@ -42,7 +42,8 @@ The `android/` folder is committed and edited by hand (signing, trimmed permissi
 
   • Learns from your ratings, watched films and watchlist — import your Letterboxd export and keep it in sync automatically
   • Mood prompt, genres, years, length, language, familiar ↔ obscure
-  • Only films on your streaming services, if you like
+  • Only films on the streaming services you pick for tonight, if you like
+  • Your recent searches stay on the phone, ready to open again
   • Rate, save and dismiss films in the app
   • Local-first: no account with us, no server, no analytics, no ads. Your library never leaves your phone except to create your recommendations
   • Open source (MIT)

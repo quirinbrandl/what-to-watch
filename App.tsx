@@ -4,21 +4,25 @@ import { useFonts } from 'expo-font';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
-import { AppState as NativeAppState, BackHandler, Pressable, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AppState as NativeAppState, BackHandler, Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { GestureDetector, GestureHandlerRootView, usePanGesture } from 'react-native-gesture-handler';
+import Animated, { Easing, cancelAnimation, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import { discover } from './src/app/discover';
 import { tick } from './src/app/platform';
 import { app, useStore } from './src/app/store';
 import { ui } from './src/app/ui';
-import { Icon, IconName } from './src/ui/components';
+import { Icon, IconName, TabSwipe } from './src/ui/components';
 import { DiscoverScreen, FilterSheet } from './src/ui/Discover';
 import { FeedScreen } from './src/ui/Feed';
 import { FilmSheet } from './src/ui/FilmSheet';
 import { Layers } from './src/ui/Layers';
 import { LibraryScreen, SearchScreen } from './src/ui/Library';
 import { Onboarding } from './src/ui/Onboarding';
+import { SearchesScreen } from './src/ui/Searches';
 import { ImportOverlay, SettingsScreen } from './src/ui/Settings';
 import { C, sans } from './src/ui/theme';
 
@@ -61,15 +65,23 @@ function TabBar() {
   );
 }
 
+const KEYS = TABS.map(([k]) => k);
+
+/** Library and Settings scroll under the status bar; this keeps the two apart. */
+function StatusShade() {
+  const insets = useSafeAreaInsets();
+  return <LinearGradient colors={[C.bg, 'rgba(10,9,8,0.85)', 'rgba(10,9,8,0)']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 18 }} pointerEvents="none" />;
+}
+
 function Shell({ autoRun }: { autoRun: boolean }) {
   useStore(ui);
-  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   useEffect(() => {
     void discover.restore();
     if (autoRun) ui.openFeed({ start: true });
   }, [autoRun]);
-  const covered = ui.feed || ui.search;
-  const tab = ui.tab;
+  const covered = ui.feed || ui.search || ui.searches;
+  const index = KEYS.indexOf(ui.tab);
   // Once an overlay has faded in, stop drawing what it covers.
   const [hidden, setHidden] = useState(false);
   useEffect(() => {
@@ -77,20 +89,96 @@ function Shell({ autoRun }: { autoRun: boolean }) {
     const t = setTimeout(() => setHidden(true), 320);
     return () => clearTimeout(t);
   }, [covered]);
+
+  // The tabs lie side by side; `pos` is the visible one (fractional while swiping).
+  const pos = useSharedValue(index);
+  const from = useSharedValue(index);
+  const [mounted, setMounted] = useState<Set<string>>(() => new Set([ui.tab]));
+  useEffect(() => {
+    // The neighbours are ready shortly after start, so a swipe never reveals an empty page.
+    const t = setTimeout(() => setMounted(new Set(KEYS)), 900);
+    return () => clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    // A tap on the tab bar or the back button: glide there.
+    if (Math.abs(pos.value - index) > 0.01) pos.value = withTiming(index, { duration: 300, easing: Easing.out(Easing.cubic) });
+    setMounted((m) => (m.has(ui.tab) ? m : new Set([...m, ui.tab])));
+  }, [index, pos]);
+  const settle = (i: number) => {
+    if (KEYS[i] !== ui.tab) {
+      tick();
+      ui.setTab(KEYS[i]);
+    }
+  };
+  const last = KEYS.length - 1;
+  // Memoised, so the gesture keeps its identity for the scrollers that defer to it.
+  const swipe = usePanGesture(
+    useMemo(
+      () => ({
+        activeOffsetX: [-14, 14] as [number, number],
+        failOffsetY: [-12, 12] as [number, number],
+        onActivate: () => {
+          'worklet';
+          cancelAnimation(pos);
+          from.value = pos.value;
+        },
+        onUpdate: (e: { translationX: number }) => {
+          'worklet';
+          let p = from.value - e.translationX / width;
+          // Resist past the first and last tab.
+          if (p < 0) p *= 0.25;
+          if (p > last) p = last + (p - last) * 0.25;
+          pos.value = p;
+        },
+        onDeactivate: (e: { velocityX: number }) => {
+          'worklet';
+          const start = Math.round(from.value);
+          let to = Math.round(pos.value);
+          if (e.velocityX < -450) to = Math.ceil(pos.value - 0.02);
+          else if (e.velocityX > 450) to = Math.floor(pos.value + 0.02);
+          to = Math.max(0, Math.min(last, Math.max(start - 1, Math.min(start + 1, to))));
+          pos.value = withSpring(to, { damping: 34, stiffness: 300, mass: 1, overshootClamping: true, velocity: -e.velocityX / width });
+          scheduleOnRN(settle, to);
+        },
+      }),
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [width],
+    ),
+  );
+  const slide = useAnimatedStyle(() => ({ transform: [{ translateX: -pos.value * width }] }));
+  const page = (key: string, body: React.ReactNode) => (
+    // Clipped, so the home screen's tilted poster wall stays out of its neighbour.
+    <View key={key} style={{ width, height: '100%', overflow: 'hidden' }} importantForAccessibility={key === ui.tab ? 'auto' : 'no-hide-descendants'} accessibilityElementsHidden={key !== ui.tab}>
+      {mounted.has(key) && body}
+    </View>
+  );
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flex: 1, display: hidden ? 'none' : 'flex' }} importantForAccessibility={covered ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={covered}>
-        <View style={{ flex: 1, display: tab === 'discover' ? 'flex' : 'none' }}>
-          <DiscoverScreen />
-        </View>
-        {tab === 'library' && <LibraryScreen />}
-        {tab === 'settings' && <SettingsScreen />}
-        {tab !== 'discover' && (
-          // Keeps scrolled content from colliding with the status bar.
-          <LinearGradient colors={[C.bg, 'rgba(8,8,10,0.85)', 'rgba(8,8,10,0)']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 18 }} pointerEvents="none" />
-        )}
-        <TabBar />
-      </View>
+      <TabSwipe.Provider value={swipe}>
+        <GestureDetector gesture={swipe}>
+          <View style={{ flex: 1, overflow: 'hidden', display: hidden ? 'none' : 'flex' }} importantForAccessibility={covered ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={covered}>
+            <Animated.View style={[{ flex: 1, flexDirection: 'row', width: width * KEYS.length }, slide]}>
+              {page('discover', <DiscoverScreen />)}
+              {page(
+                'library',
+                <>
+                  <LibraryScreen />
+                  <StatusShade />
+                </>,
+              )}
+              {page(
+                'settings',
+                <>
+                  <SettingsScreen />
+                  <StatusShade />
+                </>,
+              )}
+            </Animated.View>
+            <TabBar />
+          </View>
+        </GestureDetector>
+      </TabSwipe.Provider>
+      {ui.searches && <SearchesScreen />}
       {ui.feed && <FeedScreen />}
       {ui.search && <SearchScreen />}
       {ui.filters && <FilterSheet />}
@@ -138,9 +226,11 @@ export default function App() {
     if (ready) void SplashScreen.hideAsync().catch(() => {});
   }, [ready]);
   return (
-    <SafeAreaProvider>
-      <StatusBar style="light" />
-      {ready ? <Root /> : <View style={{ flex: 1, backgroundColor: C.bg }} />}
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: C.bg }}>
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        {ready ? <Root /> : <View style={{ flex: 1, backgroundColor: C.bg }} />}
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

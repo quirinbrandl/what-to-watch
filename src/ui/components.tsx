@@ -1,17 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image, ImageStyle } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import React, { ReactNode, createContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, GestureResponderEvent, LayoutChangeEvent, Pressable, ScrollView, StyleProp, StyleSheet, Text, View, ViewStyle, useWindowDimensions } from 'react-native';
-import Animated, { Easing, FadeIn, FadeOut, SlideInDown, SlideOutDown, cancelAnimation, useAnimatedStyle, useFrameCallback, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import { GestureDetector, PanGesture, useCompetingGestures, usePanGesture, useTapGesture } from 'react-native-gesture-handler';
+import Animated, { Easing, FadeIn, FadeOut, SlideInDown, SlideOutDown, cancelAnimation, useAnimatedStyle, useFrameCallback, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import { thud, tick } from '../app/platform';
 import { Film } from '../core/models';
 import { Tmdb } from '../core/tmdb';
 
-import { C, sans, display } from './theme';
+import { C, caps, sans, display } from './theme';
 
 export type IconName = React.ComponentProps<typeof Ionicons>['name'];
 export const Icon = Ionicons;
@@ -441,6 +443,116 @@ export function RangeSlider(props: { min: number; max: number; step?: number; lo
   );
 }
 
+const SNAP = { damping: 26, stiffness: 320, mass: 0.8, overshootClamping: true } as const;
+
+/**
+ * A slider that stops at a few named positions. The thumb follows the finger
+ * freely, ticks as it passes each stop and settles on the nearest one; a tap
+ * on the track jumps there.
+ */
+export function StopSlider(props: { title: string; names: string[]; value: number; onChange: (i: number) => void; ends: [string, string] }) {
+  const { title, names, value, onChange, ends } = props;
+  const n = names.length;
+  const pad = 14;
+  const [live, setLive] = useState(value);
+  const width = useSharedValue(0);
+  const pos = useSharedValue(value);
+  const last = useSharedValue(value);
+  const change = useRef(onChange);
+  change.current = onChange;
+  useEffect(() => {
+    // Set from outside (Reset): glide there.
+    pos.value = withSpring(value, SNAP);
+    last.value = value;
+    setLive(value);
+  }, [value, pos, last]);
+  const commit = (i: number) => {
+    setLive(i);
+    change.current(i);
+  };
+  const toStop = (x: number) => {
+    'worklet';
+    const t = (x - pad) / Math.max(1, width.value - pad * 2);
+    return Math.min(n - 1, Math.max(0, t * (n - 1)));
+  };
+  const follow = (x: number) => {
+    'worklet';
+    pos.value = toStop(x);
+    const i = Math.round(pos.value);
+    if (i !== last.value) {
+      last.value = i;
+      scheduleOnRN(tick);
+      scheduleOnRN(setLive, i);
+    }
+  };
+  const settle = (i: number) => {
+    'worklet';
+    pos.value = withSpring(i, SNAP);
+    last.value = i;
+    scheduleOnRN(commit, i);
+  };
+  // Whichever direction the finger goes first wins: sideways moves the thumb,
+  // up or down scrolls the sheet the slider sits in.
+  const pan = usePanGesture({
+    activeOffsetX: [-8, 8],
+    failOffsetY: [-8, 8],
+    onActivate: (e) => {
+      'worklet';
+      follow(e.x);
+    },
+    onUpdate: (e) => {
+      'worklet';
+      follow(e.x);
+    },
+    onDeactivate: () => {
+      'worklet';
+      settle(Math.round(pos.value));
+    },
+  });
+  const tap = useTapGesture({
+    onActivate: (e) => {
+      'worklet';
+      const i = Math.round(toStop(e.x));
+      if (i !== last.value) scheduleOnRN(tick);
+      settle(i);
+    },
+  });
+  const gesture = useCompetingGestures(pan, tap);
+  const thumb = useAnimatedStyle(() => ({ transform: [{ translateX: pad + (pos.value / (n - 1)) * Math.max(0, width.value - pad * 2) - 13 }] }));
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 4, paddingHorizontal: 2 }}>
+        <Text style={[caps(), { flex: 1 }]} accessibilityRole="header">
+          {title}
+        </Text>
+        <Text style={sans(13, 'semi')}>{names[live]}</Text>
+      </View>
+      <GestureDetector gesture={gesture}>
+        <View
+          onLayout={(e) => (width.value = e.nativeEvent.layout.width)}
+          accessible
+          accessibilityRole="adjustable"
+          accessibilityLabel={title}
+          accessibilityValue={{ text: names[value] }}
+          accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+          onAccessibilityAction={(e) => onChange(Math.min(n - 1, Math.max(0, value + (e.nativeEvent.actionName === 'increment' ? 1 : -1))))}
+          style={{ height: 48, justifyContent: 'center' }}>
+          <View pointerEvents="none" style={{ marginHorizontal: pad, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.16)', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            {names.map((_, i) => (
+              <View key={i} style={{ width: 8, height: 8, borderRadius: 4, marginHorizontal: -2, backgroundColor: 'rgba(255,255,255,0.4)' }} />
+            ))}
+          </View>
+          <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 11, width: 26, height: 26, borderRadius: 13, backgroundColor: C.ink, boxShadow: '0 2px 8px rgba(0,0,0,0.5)' }, thumb]} />
+        </View>
+      </GestureDetector>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 }} importantForAccessibility="no-hide-descendants">
+        <Text style={sans(12, 'medium', C.faint)}>{ends[0]}</Text>
+        <Text style={sans(12, 'medium', C.faint)}>{ends[1]}</Text>
+      </View>
+    </View>
+  );
+}
+
 /** An on/off row with icon, label and optional detail. */
 export function ToggleRow({ icon, label, sub, value, onChange }: { icon: IconName; label: string; sub?: string; value: boolean; onChange?: (v: boolean) => void }) {
   const off = !onChange;
@@ -473,22 +585,58 @@ export function ToggleRow({ icon, label, sub, value, onChange }: { icon: IconNam
 
 // ---------------------------------------------------------------- layers
 
-/** A bottom sheet over a dimmed backdrop. */
+/**
+ * A bottom sheet over a dimmed backdrop. Closes with a tap outside, or by
+ * pulling its handle down: it follows the finger and goes once pulled far
+ * or fast enough, otherwise it springs back.
+ */
 export function Sheet({ onClose, children, tint, maxHeight = 0.9 }: { onClose: () => void; children: ReactNode; tint?: string; maxHeight?: number }) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const drag = useSharedValue(0);
+  const sheetH = useSharedValue(height * maxHeight);
+  const close = useRef(onClose);
+  close.current = onClose;
+  const dismiss = () => close.current();
+  const pan = usePanGesture({
+    activeOffsetY: [-4, 4],
+    onUpdate: (e) => {
+      'worklet';
+      drag.value = e.translationY > 0 ? e.translationY : e.translationY * 0.12;
+    },
+    onDeactivate: (e) => {
+      'worklet';
+      if (e.translationY > Math.min(140, sheetH.value * 0.3) || (e.velocityY > 700 && e.translationY > 12)) {
+        // Keep moving at once; the slide-out then continues from there.
+        drag.value = withTiming(sheetH.value, { duration: 200, easing: Easing.out(Easing.quad) });
+        scheduleOnRN(dismiss);
+      } else {
+        drag.value = withSpring(0, { damping: 24, stiffness: 300, overshootClamping: true, velocity: e.velocityY });
+      }
+    },
+  });
+  const follow = useAnimatedStyle(() => ({ transform: [{ translateY: drag.value }] }));
+  const dim = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, Math.max(0, drag.value) / Math.max(1, sheetH.value)) }));
   return (
     <View style={StyleSheet.absoluteFill} accessibilityViewIsModal>
-      <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(160)} style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+      <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(160)} style={StyleSheet.absoluteFill}>
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.6)' }, dim]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+        </Animated.View>
       </Animated.View>
       <Animated.View
         entering={SlideInDown.duration(280).easing(Easing.out(Easing.cubic))}
-        exiting={SlideOutDown.duration(200)}
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: height * maxHeight, backgroundColor: tint ?? C.sheet, borderTopLeftRadius: 32, borderTopRightRadius: 32, borderWidth: 1, borderBottomWidth: 0, borderColor: C.line, overflow: 'hidden' }}>
-        <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
-          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.faint }} />
-        </View>
+        exiting={SlideOutDown.duration(220)}
+        onLayout={(e) => (sheetH.value = e.nativeEvent.layout.height)}
+        style={[
+          { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: height * maxHeight, backgroundColor: tint ?? C.sheet, borderTopLeftRadius: 32, borderTopRightRadius: 32, borderWidth: 1, borderBottomWidth: 0, borderColor: C.line, overflow: 'hidden' },
+          follow,
+        ]}>
+        <GestureDetector gesture={pan}>
+          <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 18 }} accessible accessibilityRole="button" accessibilityLabel="Close" accessibilityHint="Or drag down to close" onAccessibilityTap={onClose}>
+            <View style={{ width: 44, height: 5, borderRadius: 3, backgroundColor: C.faint }} />
+          </View>
+        </GestureDetector>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 24 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           {children}
         </ScrollView>
@@ -496,6 +644,9 @@ export function Sheet({ onClose, children, tint, maxHeight = 0.9 }: { onClose: (
     </View>
   );
 }
+
+/** The swipe between the three tabs, so a horizontal scroller inside a tab can take precedence over it. */
+export const TabSwipe = createContext<PanGesture | undefined>(undefined);
 
 /** A full-screen layer above the tabs (feed, search). */
 export function Overlay({ children }: { children: ReactNode }) {

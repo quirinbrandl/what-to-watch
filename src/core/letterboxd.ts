@@ -360,6 +360,21 @@ export async function matchExport(ex: LbExport, tmdb: Tmdb, onProgress?: (done: 
  * A ZIP export is a full snapshot of the Letterboxd side: replace all
  * Letterboxd-derived values, keep everything done in the app.
  */
+/**
+ * For an import without the watchlist: drops the films that are only on the
+ * watchlist, so they are neither matched nor imported. Returns how many.
+ */
+export function dropWatchlistOnly(ex: LbExport): number {
+  let n = 0;
+  for (const [k, f] of ex.films) {
+    if (f.watchlist && f.rating === undefined && !f.watched && !f.liked && !f.favorite && f.watchDates.size === 0) {
+      ex.films.delete(k);
+      n++;
+    } else f.watchlist = false;
+  }
+  return n;
+}
+
 export function applyExport(lib: Library, ex: LbExport): void {
   for (const e of lib.entries.values()) e.clearLetterboxd();
   lib.unmatched = [];

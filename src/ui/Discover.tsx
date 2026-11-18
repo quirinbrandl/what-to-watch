@@ -1,22 +1,26 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import React, { useContext, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { discover } from '../app/discover';
 import { tick } from '../app/platform';
-import { app, useStore } from '../app/store';
+import { REGIONS, app, useStore } from '../app/store';
 import { ui } from '../app/ui';
 import { hardFilterCount, newRequest } from '../core/engine/request';
-import { GENRES, GENRE_IDS, LANGUAGES } from '../core/models';
+import { LEVELS, levelOf as level, searchTitle } from '../core/history';
+import { GENRES, GENRE_IDS, LANGUAGES, Prov } from '../core/models';
+import { pickableServices } from '../core/services';
 
-import { BigButton, Chip, Icon, Poster, PosterWall, RangeSlider, Sheet, ToggleRow, Wordmark } from './components';
-import { C, caps, runtimeLabel, sans, display } from './theme';
+import { BigButton, Chip, Icon, Poster, PosterWall, ProviderLogo, RangeSlider, Sheet, StopSlider, TabSwipe, ToggleRow, Wordmark } from './components';
+import { C, caps, runtimeLabel, sans } from './theme';
 
 /** Home: your films as a living backdrop, one thumb-reach composer. */
 export function DiscoverScreen() {
   useStore(app);
   useStore(discover);
   const insets = useSafeAreaInsets();
+  const tabs = useContext(TabSwipe);
   const r = app.settings.request;
   const [text, setText] = useState(r.prompt);
   const [wall, setWall] = useState<string[]>([]);
@@ -54,7 +58,8 @@ export function DiscoverScreen() {
 
   const n = hardFilterCount(r);
   const sheet = () => ui.openFilters();
-  const picks = discover.session?.picks ?? [];
+  const services = app.settings.services;
+  const lv = level(r.obscurity);
   return (
     <View style={{ flex: 1 }}>
       <PosterWall posters={wall} />
@@ -63,24 +68,7 @@ export function DiscoverScreen() {
           <Wordmark size={24} mark />
         </View>
         <View style={{ flex: 1 }} />
-        {picks.length > 0 && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open your last picks"
-            onPress={() => {
-              tick();
-              ui.openFeed();
-            }}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-            {picks.slice(0, 5).map((p) => (
-              <Poster key={p.film.id} path={p.film.poster} radius={8} size="w185" style={{ width: 56, height: 84 }} />
-            ))}
-            <View style={{ flex: 1 }} />
-            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' }}>
-              <Icon name="arrow-forward" size={20} color={C.ink} />
-            </View>
-          </Pressable>
-        )}
+        {discover.searches.length > 0 && <SearchesButton />}
         <View style={{ backgroundColor: C.glass, borderRadius: 28, borderWidth: 1, borderColor: C.line, padding: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
             <TextInput
@@ -103,17 +91,14 @@ export function DiscoverScreen() {
               </Pressable>
             )}
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 8, gap: 8 }}>
+          {/* Swiping along the chips scrolls them; it does not switch tabs. */}
+          <GestureScrollView horizontal block={tabs} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 8, gap: 8 }}>
             <Chip label={n === 0 ? 'Filters' : `Filters · ${n}`} icon="options-outline" active={n > 0} onPress={sheet} />
             <Chip
-              label="My services"
-              icon="tv-outline"
-              active={r.streamingOnly}
-              onPress={() => {
-                if (!Object.keys(app.settings.providers).length) return ui.toast('Pick your services in Settings first');
-                r.streamingOnly = !r.streamingOnly;
-                app.changed();
-              }}
+              label={services.length ? services.map((s) => s.name).join(', ') : 'Any service'}
+              icon={services.length ? undefined : 'tv-outline'}
+              leading={services.length ? <ServiceStack list={services} /> : undefined}
+              onPress={sheet}
             />
             {(r.genres.length > 0 || r.notGenres.length > 0) && <Chip label={[...r.genres.map((g) => GENRES[g]), ...r.notGenres.map((g) => `no ${GENRES[g]}`)].join(', ')} onPress={sheet} />}
             {(r.yearMin !== undefined || r.yearMax !== undefined) && <Chip label={`${r.yearMin ?? '…'}–${r.yearMax ?? 'now'}`} onPress={sheet} />}
@@ -121,10 +106,11 @@ export function DiscoverScreen() {
               <Chip label={r.runMax !== undefined && r.runMin === undefined ? `≤ ${runtimeLabel(r.runMax)}` : `${r.runMin ?? 0}–${r.runMax ?? '∞'} min`} onPress={sheet} />
             )}
             {r.langs.length > 0 && <Chip label={r.langs.map((l) => LANGUAGES[l] ?? l).join(', ')} onPress={sheet} />}
-            {Math.abs(r.obscurity - 0.5) > 0.15 && <Chip label={r.obscurity < 0.5 ? 'Familiar' : 'Obscure'} onPress={sheet} />}
+            {lv !== 2 && <Chip label={LEVELS[lv]} onPress={sheet} />}
             {!r.personalize && <Chip label="Not personal" onPress={sheet} />}
             {!r.excludeWatched && <Chip label="Rewatches" onPress={sheet} />}
-          </ScrollView>
+            {r.excludeWatchlist && <Chip label="Not on watchlist" onPress={sheet} />}
+          </GestureScrollView>
           <BigButton label="Find films" icon="sparkles" onPress={go} color={C.accent} ink={C.accentInk} style={{ marginTop: 10, marginHorizontal: 2, marginBottom: 2 }} />
         </View>
       </View>
@@ -132,10 +118,176 @@ export function DiscoverScreen() {
   );
 }
 
+/** Small overlapping service logos for a chip. */
+function ServiceStack({ list }: { list: { logo: string | null; name: string }[] }) {
+  return (
+    <View style={{ flexDirection: 'row' }}>
+      {list.slice(0, 3).map((s, i) => (
+        <View key={s.name} style={{ marginLeft: i ? -7 : -4, borderRadius: 7, borderWidth: 1.5, borderColor: C.sheet }}>
+          <ProviderLogo logo={s.logo} name={s.name} size={20} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** The way back to earlier searches: a little fan of the last one's posters. */
+function SearchesButton() {
+  const list = discover.searches;
+  const latest = list[0];
+  const posters = latest.session.picks.slice(0, 3).map((p) => p.film.poster);
+  const place = [
+    { left: 0, top: 6, rotate: '-9deg' },
+    { left: 36, top: 6, rotate: '9deg' },
+    { left: 18, top: 1, rotate: '0deg' },
+  ];
+  // Middle poster last, so it lies on top.
+  const order = [0, 1, 2].filter((i) => i < posters.length);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Your searches, ${list.length} saved`}
+      onPress={() => {
+        tick();
+        ui.openSearches();
+      }}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+        backgroundColor: C.glass,
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: C.line,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        marginBottom: 12,
+        opacity: pressed ? 0.8 : 1,
+      })}>
+      <View style={{ width: 78, height: 66 }} importantForAccessibility="no-hide-descendants">
+        {order.map((i) => (
+          <View key={i} style={{ position: 'absolute', left: place[i].left, top: place[i].top, transform: [{ rotate: place[i].rotate }], boxShadow: '0 3px 8px rgba(0,0,0,0.55)', borderRadius: 7 }}>
+            <Poster path={posters[i]} radius={7} size="w185" style={{ width: 40, height: 60 }} />
+          </View>
+        ))}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={sans(15.5, 'bold')}>Your searches</Text>
+        <Text style={[sans(12.5, 'medium', C.dim), { marginTop: 3 }]} numberOfLines={1}>
+          {list.length === 1 ? '1 saved' : `${list.length} saved`} · {searchTitle(latest)}
+        </Text>
+      </View>
+      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name="chevron-forward" size={19} color={C.ink} />
+      </View>
+    </Pressable>
+  );
+}
+
+export async function pickRegion(): Promise<void> {
+  const items = Object.entries(REGIONS)
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([key, label]) => ({ key, label }));
+  const r = await ui.choose('Country', items, app.settings.region);
+  if (r) app.setRegion(r);
+}
+
+/** The country, and the streaming services to limit this search to. */
+function WhereToWatch() {
+  useStore(app);
+  const { width } = useWindowDimensions();
+  // Five to a row, each logo with its name under it: several services share a logo.
+  const tileW = Math.floor((width - 40 - 4 * 8) / 5);
+  const region = app.settings.region;
+  const picked = app.settings.services;
+  const [catalog, setCatalog] = useState<Prov[] | undefined>();
+  const [retry, setRetry] = useState(0);
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setCatalog(undefined);
+    app
+      .providerCatalog(region)
+      .then((c) => alive && setCatalog(pickableServices(c)))
+      .catch(() => alive && setCatalog([]));
+    return () => {
+      alive = false;
+    };
+  }, [region, retry]);
+  const on = (p: Prov) => picked.some((x) => x.id === p.id);
+  let grid: React.ReactNode;
+  if (!catalog) grid = <ActivityIndicator color={C.dim} style={{ height: 70 }} />;
+  else if (!catalog.length) {
+    grid = (
+      <Pressable accessibilityRole="button" onPress={() => setRetry(retry + 1)} style={{ height: 60, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}>
+        <Icon name="refresh" size={16} color={C.dim} />
+        <Text style={sans(13.5, 'semi', C.dim)}>Could not load services — retry</Text>
+      </Pressable>
+    );
+  } else {
+    // TMDB orders services by how much people use them there; picked ones first.
+    const rest = catalog.filter((p) => !on(p));
+    const shown = all ? rest : rest.slice(0, Math.max(0, 11 - picked.length));
+    grid = (
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 8, rowGap: 12 }}>
+        {[...catalog.filter(on), ...shown].map((p) => (
+          <Pressable
+            key={p.id}
+            accessibilityRole="checkbox"
+            accessibilityLabel={p.name}
+            accessibilityState={{ checked: on(p) }}
+            onPress={() => {
+              tick();
+              app.toggleService(p);
+            }}
+            style={{ width: tileW, alignItems: 'center' }}>
+            <View style={{ padding: 3, borderRadius: 17, borderWidth: 2.4, borderColor: on(p) ? C.accent : 'transparent', opacity: on(p) ? 1 : 0.6 }}>
+              <ProviderLogo logo={p.logo} name={p.name} size={48} />
+            </View>
+            <Text style={[sans(10.5, 'semi', on(p) ? C.ink : C.dim, { lineHeight: 13 }), { marginTop: 4, textAlign: 'center', alignSelf: 'stretch' }]} numberOfLines={2}>
+              {p.name}
+            </Text>
+          </Pressable>
+        ))}
+        {shown.length < rest.length && (
+          <Pressable accessibilityRole="button" accessibilityLabel="Show all services" onPress={() => setAll(true)} style={{ width: tileW, alignItems: 'center' }}>
+            <View style={{ width: 58.8, height: 58.8, borderRadius: 17, borderWidth: 1, borderColor: C.line, backgroundColor: C.soft, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="add" size={20} color={C.ink} />
+            </View>
+            <Text style={[sans(10.5, 'semi', C.dim, { lineHeight: 13 }), { marginTop: 4, textAlign: 'center', alignSelf: 'stretch' }]}>All services</Text>
+          </Pressable>
+        )}
+      </View>
+    );
+  }
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 10, paddingHorizontal: 2 }}>
+        <Text style={[caps(), { flex: 1 }]} accessibilityRole="header">
+          WHERE TO WATCH
+        </Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Country: ${REGIONS[region] ?? region}. Change`} onPress={() => void pickRegion()} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Icon name="globe-outline" size={14} color={C.ink} />
+          <Text style={sans(13, 'semi')}>{REGIONS[region] ?? region}</Text>
+          <Icon name="chevron-down" size={13} color={C.dim} />
+        </Pressable>
+      </View>
+      {grid}
+      <Text style={[sans(12.5, 'medium', C.dim, { lineHeight: 17 }), { marginTop: 10, paddingHorizontal: 2 }]}>
+        {picked.length ? `Only films included with ${picked.map((x) => x.name).join(', ')}.` : 'Pick the services you can use tonight to see only films on them. None picked: anywhere.'}
+      </Text>
+      {picked.length > 0 && (
+        <Pressable accessibilityRole="button" onPress={() => app.setServices([])} hitSlop={8} style={{ alignSelf: 'flex-start', marginTop: 6, paddingVertical: 6, paddingHorizontal: 2 }}>
+          <Text style={sans(13, 'semi', C.accent)}>Any service</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
 const Y0 = 1920;
 const R0 = 60;
 const R1 = 240;
-const dialLabel = (o: number) => (o < 0.35 ? 'Familiar' : o > 0.65 ? 'Obscure' : 'Balanced');
 
 /** Every discovery control in one sheet; changes apply immediately. */
 export function FilterSheet() {
@@ -162,7 +314,6 @@ export function FilterSheet() {
       {value && <Text style={sans(13, 'semi')}>{value}</Text>}
     </View>
   );
-  const services = Object.values(app.settings.providers);
   return (
     <Sheet onClose={() => ui.openFilters(false)}>
       {head('GENRES', 'tap twice to exclude')}
@@ -185,6 +336,7 @@ export function FilterSheet() {
           />
         ))}
       </View>
+      <WhereToWatch />
       {head('YEAR', r.yearMin === undefined && r.yearMax === undefined ? 'Any' : `${r.yearMin ?? Y0} – ${r.yearMax ?? 'now'}`)}
       <RangeSlider
         label="Release year"
@@ -215,6 +367,7 @@ export function FilterSheet() {
           })
         }
       />
+      <StopSlider title="MAINSTREAM ↔ NICHE" names={LEVELS} ends={['Big, well-known films', 'Films few have seen']} value={level(r.obscurity)} onChange={(i) => set(() => (r.obscurity = i / 4))} />
       {head('ORIGINAL LANGUAGE')}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         {langs.map((l) => (
@@ -222,27 +375,22 @@ export function FilterSheet() {
         ))}
         {langs.length < Object.keys(LANGUAGES).length && <Chip label="More" icon="add" onPress={() => setAllLangs(true)} />}
       </View>
-      {head('FAMILIAR ↔ OBSCURE', dialLabel(r.obscurity))}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Icon name="flame-outline" size={19} color={C.dim} />
-        <View style={{ flex: 1 }}>
-          <RangeSlider label="Familiar to obscure" min={0} max={4} high={Math.round(r.obscurity * 4)} format={(v) => dialLabel(v / 4)} onChange={(_, hi) => set(() => (r.obscurity = hi / 4))} />
-        </View>
-        <Icon name="diamond-outline" size={19} color={C.dim} />
-      </View>
       <View style={{ marginTop: 14 }}>
-        <ToggleRow
-          icon="tv-outline"
-          label="Only on my services"
-          sub={services.length ? services.slice(0, 4).join(' · ') : 'Pick services in Settings'}
-          value={r.streamingOnly}
-          onChange={services.length ? (v) => set(() => (r.streamingOnly = v)) : undefined}
-        />
         <ToggleRow icon="finger-print" label="Personalize with my taste" value={r.personalize} onChange={(v) => set(() => (r.personalize = v))} />
         <ToggleRow icon="eye-off-outline" label="Hide films I have seen" value={r.excludeWatched} onChange={(v) => set(() => (r.excludeWatched = v))} />
+        <ToggleRow icon="bookmark-outline" label="Hide films on my watchlist" sub="For something you had not thought of yet" value={r.excludeWatchlist} onChange={(v) => set(() => (r.excludeWatchlist = v))} />
       </View>
       <View style={{ flexDirection: 'row', gap: 12, marginTop: 18 }}>
-        <BigButton label="Reset" color="rgba(255,255,255,0.12)" ink={C.ink} style={{ flex: 1 }} onPress={() => set(() => (app.settings.request = newRequest({ prompt: r.prompt })))} />
+        <BigButton
+          label="Reset"
+          color="rgba(255,255,255,0.12)"
+          ink={C.ink}
+          style={{ flex: 1 }}
+          onPress={() => {
+            app.settings.request = newRequest({ prompt: r.prompt });
+            app.setServices([]);
+          }}
+        />
         <BigButton label="Done" style={{ flex: 1 }} onPress={() => ui.openFilters(false)} />
       </View>
     </Sheet>

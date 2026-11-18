@@ -7,7 +7,8 @@
 Everything stays on your device, in the app's private storage:
 
 - your library: ratings, watched films, watchlist, "not for me" marks, and what you imported from Letterboxd
-- your settings: region, streaming services, filters, chosen model
+- your settings: country, filters (including the streaming services picked for a search), chosen model
+- your recent searches (the last 20): what you asked for and the films that were found
 - a cache of public film information and poster images
 - your sign-in credentials (ChatGPT session tokens or an OpenAI API key), kept in the operating system's secure credential storage (Android Keystore / iOS Keychain)
 
