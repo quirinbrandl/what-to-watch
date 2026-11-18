@@ -30,12 +30,13 @@ void SplashScreen.preventAutoHideAsync().catch(() => {});
 void app.init();
 
 const TABS: [typeof ui.tab, IconName, string][] = [
-  ['discover', 'sparkles', 'Discover'],
-  ['library', 'grid', 'Library'],
+  ['discover', 'search', 'Discover'],
+  ['library', 'film', 'Library'],
+  ['searches', 'library', 'Searches'],
   ['settings', 'options', 'Settings'],
 ];
 
-/** Three places, one thumb: Discover · Library · Settings. */
+/** Four places, one thumb: Discover · Library · Searches · Settings. */
 function TabBar() {
   const insets = useSafeAreaInsets();
   const tab = ui.tab;
@@ -67,7 +68,7 @@ function TabBar() {
 
 const KEYS = TABS.map(([k]) => k);
 
-/** Library and Settings scroll under the status bar; this keeps the two apart. */
+/** Library, Searches and Settings scroll under the status bar; this keeps the two apart. */
 function StatusShade() {
   const insets = useSafeAreaInsets();
   return <LinearGradient colors={[C.bg, 'rgba(10,9,8,0.85)', 'rgba(10,9,8,0)']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 18 }} pointerEvents="none" />;
@@ -80,7 +81,7 @@ function Shell({ autoRun }: { autoRun: boolean }) {
     void discover.restore();
     if (autoRun) ui.openFeed({ start: true });
   }, [autoRun]);
-  const covered = ui.feed || ui.search || ui.searches;
+  const covered = ui.feed || ui.search;
   const index = KEYS.indexOf(ui.tab);
   // Once an overlay has faded in, stop drawing what it covers.
   const [hidden, setHidden] = useState(false);
@@ -167,6 +168,13 @@ function Shell({ autoRun }: { autoRun: boolean }) {
                 </>,
               )}
               {page(
+                'searches',
+                <>
+                  <SearchesScreen />
+                  <StatusShade />
+                </>,
+              )}
+              {page(
                 'settings',
                 <>
                   <SettingsScreen />
@@ -178,7 +186,6 @@ function Shell({ autoRun }: { autoRun: boolean }) {
           </View>
         </GestureDetector>
       </TabSwipe.Provider>
-      {ui.searches && <SearchesScreen />}
       {ui.feed && <FeedScreen />}
       {ui.search && <SearchScreen />}
       {ui.filters && <FilterSheet />}

@@ -8,11 +8,11 @@ import { tick } from '../app/platform';
 import { REGIONS, app, useStore } from '../app/store';
 import { ui } from '../app/ui';
 import { hardFilterCount, newRequest } from '../core/engine/request';
-import { LEVELS, levelOf as level, whenLabel } from '../core/history';
+import { LEVELS, levelOf as level } from '../core/history';
 import { GENRES, GENRE_IDS, LANGUAGES, Prov } from '../core/models';
 import { pickableServices } from '../core/services';
 
-import { BigButton, Chip, Icon, Poster, PosterWall, ProviderLogo, RangeSlider, Sheet, StopSlider, TabSwipe, ToggleRow, Wordmark } from './components';
+import { BigButton, Chip, Icon, PosterWall, ProviderLogo, RangeSlider, Sheet, StopSlider, TabSwipe, ToggleRow, Wordmark } from './components';
 import { C, caps, runtimeLabel, sans } from './theme';
 
 /** Home: your films as a living backdrop, one thumb-reach composer. */
@@ -68,7 +68,6 @@ export function DiscoverScreen() {
           <Wordmark size={24} mark />
         </View>
         <View style={{ flex: 1 }} />
-        {discover.searches.length > 0 && <SearchesButton />}
         <View style={{ backgroundColor: C.glass, borderRadius: 28, borderWidth: 1, borderColor: C.line, padding: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
             <TextInput
@@ -129,59 +128,6 @@ function ServiceStack({ list }: { list: { logo: string | null; name: string }[] 
         </View>
       ))}
     </View>
-  );
-}
-
-/** The way back to earlier searches: a little fan of the last one's posters. */
-function SearchesButton() {
-  const list = discover.searches;
-  const latest = list[0];
-  const posters = latest.session.picks.slice(0, 3).map((p) => p.film.poster);
-  const place = [
-    { left: 0, top: 6, rotate: '-9deg' },
-    { left: 36, top: 6, rotate: '9deg' },
-    { left: 18, top: 1, rotate: '0deg' },
-  ];
-  // Middle poster last, so it lies on top.
-  const order = [0, 1, 2].filter((i) => i < posters.length);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Your searches, ${list.length} saved`}
-      onPress={() => {
-        tick();
-        ui.openSearches();
-      }}
-      style={({ pressed }) => ({
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 14,
-        backgroundColor: C.glass,
-        borderRadius: 24,
-        borderWidth: 1,
-        borderColor: C.line,
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        marginBottom: 12,
-        opacity: pressed ? 0.8 : 1,
-      })}>
-      <View style={{ width: 78, height: 66 }} importantForAccessibility="no-hide-descendants">
-        {order.map((i) => (
-          <View key={i} style={{ position: 'absolute', left: place[i].left, top: place[i].top, transform: [{ rotate: place[i].rotate }], boxShadow: '0 3px 8px rgba(0,0,0,0.55)', borderRadius: 7 }}>
-            <Poster path={posters[i]} radius={7} size="w185" style={{ width: 40, height: 60 }} />
-          </View>
-        ))}
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={sans(15.5, 'bold')}>Your searches</Text>
-        <Text style={[sans(12.5, 'medium', C.dim), { marginTop: 3 }]} numberOfLines={1}>
-          {list.length === 1 ? '1 saved' : `${list.length} saved`} · {whenLabel(latest.at)}
-        </Text>
-      </View>
-      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' }}>
-        <Icon name="chevron-forward" size={19} color={C.ink} />
-      </View>
-    </Pressable>
   );
 }
 

@@ -8,44 +8,37 @@ import { useStore } from '../app/store';
 import { ui } from '../app/ui';
 import { SavedSearch, searchFilters, whenLabel } from '../core/history';
 
-import { Blank, Icon, Overlay, Poster, RoundButton } from './components';
+import { Blank, Icon, Poster } from './components';
 import { C, display, sans } from './theme';
 
-/** Earlier searches, newest first: tap one to see its films again, without waiting. */
+/** The Searches tab: earlier searches, newest first. Tap one to see its films again, without waiting. */
 export function SearchesScreen() {
   useStore(discover);
   const insets = useSafeAreaInsets();
   const list = discover.searches;
   return (
-    <Overlay>
-      <FlatList
-        data={list}
-        keyExtractor={(e) => e.id}
-        renderItem={({ item }) => <SearchCard e={item} current={item.id === discover.currentId} />}
-        contentContainerStyle={{
-          paddingTop: insets.top + 8,
-          paddingHorizontal: 14,
-          paddingBottom: insets.bottom + 30,
-          gap: 12,
-          flexGrow: 1,
-        }}
-        ListHeaderComponent={
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 10,
-              marginBottom: 6,
-            }}>
-            <RoundButton icon="chevron-back" label="Back" size={46} onPress={() => ui.openSearches(false)} />
-            <Text style={[display(34), { flex: 1 }]} accessibilityRole="header">
-              Searches
-            </Text>
-          </View>
-        }
-        ListEmptyComponent={<Blank icon="time-outline" title="Your searches will be kept here" action="Back" onAction={() => ui.openSearches(false)} />}
-      />
-    </Overlay>
+    <FlatList
+      data={list}
+      keyExtractor={(e) => e.id}
+      renderItem={({ item }) => <SearchCard e={item} current={item.id === discover.currentId} />}
+      contentContainerStyle={{
+        paddingTop: insets.top + 8,
+        paddingHorizontal: 14,
+        // Clear of the tab bar.
+        paddingBottom: insets.bottom + 110,
+        gap: 12,
+        flexGrow: 1,
+      }}
+      ListHeaderComponent={
+        // Same height and inset as the Library title, so the two line up when swiping.
+        <View style={{ minHeight: 46, justifyContent: 'center', paddingHorizontal: 2, marginBottom: 6 }}>
+          <Text style={display(34)} accessibilityRole="header">
+            Searches
+          </Text>
+        </View>
+      }
+      ListEmptyComponent={<Blank icon="library-outline" title="Your searches will be kept here" action="Start a search" onAction={() => ui.setTab('discover')} />}
+    />
   );
 }
 

@@ -21,10 +21,9 @@ export type Dialog =
  * readers always act on the topmost layer.
  */
 export class Ui extends Observable {
-  tab: 'discover' | 'library' | 'settings' = 'discover';
+  tab: 'discover' | 'library' | 'searches' | 'settings' = 'discover';
   feed = false;
   search = false;
-  searches = false; // the list of saved searches
   filters = false;
   film?: { film: Film; moreLike: boolean };
   dialog?: Dialog;
@@ -52,11 +51,6 @@ export class Ui extends Observable {
 
   openSearch(open = true): void {
     this.search = open;
-    this.notify();
-  }
-
-  openSearches(open = true): void {
-    this.searches = open;
     this.notify();
   }
 
@@ -118,7 +112,6 @@ export class Ui extends Observable {
     if (this.filters) return this.openFilters(false), true;
     if (this.search) return this.openSearch(false), true;
     if (this.feed) return this.closeFeed(), true;
-    if (this.searches) return this.openSearches(false), true;
     if (this.tab !== 'discover') return this.setTab('discover'), true;
     return false;
   }
