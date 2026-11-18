@@ -10,7 +10,7 @@ export interface Choice {
 }
 
 export type Dialog =
-  | { kind: 'confirm'; title: string; body: string; action: string; danger?: boolean; resolve: (ok: boolean) => void }
+  | { kind: 'confirm'; title: string; body: string; action: string; danger?: boolean; cancel?: string; quiet?: boolean; resolve: (ok: boolean) => void }
   | { kind: 'ask'; title: string; hint?: string; initial?: string; secret?: boolean; action: string; resolve: (v: string | undefined) => void }
   | { kind: 'info'; title: string; body: string; resolve: () => void }
   | { kind: 'choose'; title: string; items: Choice[]; current?: string; resolve: (key: string | undefined) => void };
@@ -93,7 +93,9 @@ export class Ui extends Observable {
     });
   }
 
-  confirm = (title: string, body: string, action: string, danger = false) => this.show<boolean>((resolve) => ({ kind: 'confirm', title, body, action, danger, resolve }));
+  /** `cancel` renames the way out; `quiet` makes it the highlighted choice, for actions the app would rather you did not take. */
+  confirm = (title: string, body: string, action: string, danger = false, o: { cancel?: string; quiet?: boolean } = {}) =>
+    this.show<boolean>((resolve) => ({ kind: 'confirm', title, body, action, danger, ...o, resolve }));
   ask = (title: string, o: { hint?: string; initial?: string; secret?: boolean; action?: string } = {}) =>
     this.show<string | undefined>((resolve) => ({ kind: 'ask', title, action: 'Save', ...o, resolve }));
   info = (title: string, body: string) => this.show<void>((resolve) => ({ kind: 'info', title, body, resolve }));
@@ -121,18 +123,21 @@ export const ui = new Ui();
 
 // ---------------------------------------------------------------- shared flows
 
-/** Shown once, the first time ChatGPT plan usage is enabled. */
+/**
+ * Shown once, the first time ChatGPT plan usage is enabled, when that happens
+ * outside onboarding (onboarding has its own welcome screen).
+ */
 export async function showPlanWelcome(): Promise<void> {
   if (app.settings.welcomeSeen || app.settings.useApiKey) return;
   app.settings.welcomeSeen = true;
   app.changed();
-  await ui.info("You're using your ChatGPT plan", 'Eligible usage in this app uses your ChatGPT plan. Manage usage in your ChatGPT settings.');
+  await ui.info("You're in!", 'WhatToWatch uses your ChatGPT plan to find your films. You can check your usage anytime in your ChatGPT settings.');
 }
 
-export async function signInFlow(): Promise<boolean> {
+export async function signInFlow(welcome = true): Promise<boolean> {
   try {
     await app.signIn();
-    await showPlanWelcome();
+    if (welcome) await showPlanWelcome();
     return true;
   } catch (e) {
     // Error codes only; never tokens or URLs.

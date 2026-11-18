@@ -74,13 +74,12 @@ function StatusShade() {
   return <LinearGradient colors={[C.bg, 'rgba(10,9,8,0.85)', 'rgba(10,9,8,0)']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 18 }} pointerEvents="none" />;
 }
 
-function Shell({ autoRun }: { autoRun: boolean }) {
+function Shell() {
   useStore(ui);
   const { width } = useWindowDimensions();
   useEffect(() => {
     void discover.restore();
-    if (autoRun) ui.openFeed({ start: true });
-  }, [autoRun]);
+  }, []);
   const covered = ui.feed || ui.search;
   const index = KEYS.indexOf(ui.tab);
   // Once an overlay has faded in, stop drawing what it covers.
@@ -195,7 +194,6 @@ function Shell({ autoRun }: { autoRun: boolean }) {
 
 function Root() {
   useStore(app);
-  const [fresh, setFresh] = useState(false);
 
   useEffect(() => {
     const back = BackHandler.addEventListener('hardwareBackPress', () => ui.back());
@@ -211,7 +209,8 @@ function Root() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      {app.settings.onboarded ? <Shell autoRun={fresh && app.hasLlm} /> : <Onboarding onDone={() => setFresh(true)} />}
+      {/* Onboarding ends on Discover, where the first search is set up; nothing starts by itself. */}
+      {app.settings.onboarded ? <Shell /> : <Onboarding />}
       <FilmSheet />
       <ImportOverlay />
       <Layers />

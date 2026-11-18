@@ -93,10 +93,17 @@ export function Layers() {
                 </ScrollView>
                 <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
                   {d.kind === 'confirm' ? (
-                    <>
-                      <TextButton label="Cancel" color={C.dim} onPress={() => d.resolve(false)} />
-                      <TextButton label={d.action} color={d.danger ? C.danger : C.accent} onPress={() => d.resolve(true)} />
-                    </>
+                    d.quiet ? (
+                      <>
+                        <TextButton label={d.action} color={C.dim} onPress={() => d.resolve(true)} />
+                        <TextButton label={d.cancel ?? 'Cancel'} onPress={() => d.resolve(false)} />
+                      </>
+                    ) : (
+                      <>
+                        <TextButton label={d.cancel ?? 'Cancel'} color={C.dim} onPress={() => d.resolve(false)} />
+                        <TextButton label={d.action} color={d.danger ? C.danger : C.accent} onPress={() => d.resolve(true)} />
+                      </>
+                    )
                   ) : (
                     <TextButton label={d.title.startsWith("You're") ? 'Got it' : 'Close'} onPress={() => d.resolve()} />
                   )}

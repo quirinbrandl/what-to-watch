@@ -166,7 +166,7 @@ export function Stars({ value, size = 14, color = C.accent }: { value: number; s
 }
 
 /** Half-star rating input: tap or drag across the stars. Tapping the current value clears it. */
-export function StarInput({ value, onChange, size = 46 }: { value?: number; onChange: (v: number | undefined) => void; size?: number }) {
+export function StarInput({ value, onChange, onRelease, size = 46 }: { value?: number; onChange: (v: number | undefined) => void; onRelease?: () => void; size?: number }) {
   const v = value ?? 0;
   const last = useRef<number | undefined>(value);
   const moved = useRef(false);
@@ -212,6 +212,7 @@ export function StarInput({ value, onChange, size = 46 }: { value?: number; onCh
           tick();
           onChange(undefined);
         }
+        onRelease?.();
       }}
       style={{ width: size * 5, height: size + 10, justifyContent: 'center' }}>
       <View style={{ flexDirection: 'row' }} pointerEvents="none">
