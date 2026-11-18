@@ -8,7 +8,7 @@ import { tick } from '../app/platform';
 import { REGIONS, app, useStore } from '../app/store';
 import { ui } from '../app/ui';
 import { hardFilterCount, newRequest } from '../core/engine/request';
-import { LEVELS, levelOf as level, searchTitle } from '../core/history';
+import { LEVELS, levelOf as level, whenLabel } from '../core/history';
 import { GENRES, GENRE_IDS, LANGUAGES, Prov } from '../core/models';
 import { pickableServices } from '../core/services';
 
@@ -175,7 +175,7 @@ function SearchesButton() {
       <View style={{ flex: 1 }}>
         <Text style={sans(15.5, 'bold')}>Your searches</Text>
         <Text style={[sans(12.5, 'medium', C.dim), { marginTop: 3 }]} numberOfLines={1}>
-          {list.length === 1 ? '1 saved' : `${list.length} saved`} · {searchTitle(latest)}
+          {list.length === 1 ? '1 saved' : `${list.length} saved`} · {whenLabel(latest.at)}
         </Text>
       </View>
       <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' }}>

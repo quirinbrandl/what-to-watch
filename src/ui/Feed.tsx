@@ -3,7 +3,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { GestureResponderEvent, Linking, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { GestureDetector, ScrollView as GestureScrollView, PanGesture, usePanGesture } from 'react-native-gesture-handler';
-import Animated, { Easing, cancelAnimation, useAnimatedStyle, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, cancelAnimation, useAnimatedStyle, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
+import Svg, { Path } from 'react-native-svg';
 import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -331,6 +332,51 @@ const PickPage = React.memo(function PickPage({ pick, height, first }: { pick: P
   );
 });
 
+const SPARK = 'M12 2c.6 5.5 4.5 9.4 10 10-5.5.6-9.4 4.5-10 10-.6-5.5-4.5-9.4-10-10 5.5-.6 9.4-4.5 10-10z';
+const LINES = [1, 0.93, 0.58]; // widths of the placeholder lines, like a short paragraph
+
+/**
+ * Stands where the reason goes while the AI writes it (when the feed is scrolled faster than
+ * the reasons come): a turning sparkle, "Writing…", and grey lines with a light passing over.
+ */
+function Writing() {
+  const w = useSharedValue(0);
+  const sweep = useSharedValue(0);
+  const turn = useSharedValue(0);
+  useEffect(() => {
+    sweep.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) }), -1, false);
+    turn.value = withRepeat(withTiming(1, { duration: 2400, easing: Easing.linear }), -1, false);
+    return () => {
+      cancelAnimation(sweep);
+      cancelAnimation(turn);
+    };
+  }, []);
+  // One band of light, as wide as the paragraph, crosses all three lines at once.
+  const band = useAnimatedStyle(() => ({ width: w.value, transform: [{ translateX: (sweep.value * 2 - 1) * w.value }] }));
+  const spin = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 360}deg` }] }));
+  return (
+    <View accessible accessibilityLabel="Why it fits is being written">
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+        <Animated.View style={spin}>
+          <Svg width={14} height={14} viewBox="0 0 24 24">
+            <Path d={SPARK} fill={C.accent} />
+          </Svg>
+        </Animated.View>
+        <Text style={sans(12.5, 'bold', C.accent)}>Writing…</Text>
+      </View>
+      <View onLayout={(e) => (w.value = e.nativeEvent.layout.width)} style={{ gap: 9, paddingTop: 2 }}>
+        {LINES.map((f) => (
+          <View key={f} style={{ width: `${f * 100}%`, height: 13, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.09)', overflow: 'hidden' }}>
+            <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, left: 0 }, band]}>
+              <LinearGradient colors={['transparent', 'rgba(255,255,255,0.16)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
+            </Animated.View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 /** Back of the card: the facts, and why this film fits this user. */
 function Back({ pick: p, onFlip }: { pick: Pick; onFlip: () => void }) {
   useStore(discover); // the reason is written after the film is on screen
@@ -366,8 +412,14 @@ function Back({ pick: p, onFlip }: { pick: Pick; onFlip: () => void }) {
           <View style={{ marginTop: 16 }}>
             <ProviderRow film={f} sv={discover.services} />
           </View>
-          <Text style={[caps(C.accent), { marginTop: 22, marginBottom: 8 }]}>WHY IT FITS</Text>
-          <Text style={sans(16, 'medium', p.why === undefined ? C.dim : C.ink, { lineHeight: 24 })}>{p.why ?? 'Writing this for you…'}</Text>
+          {(p.why !== undefined || app.hasLlm) && <Text style={[caps(C.accent), { marginTop: 22, marginBottom: 8 }]}>WHY IT FITS</Text>}
+          {p.why !== undefined ? (
+            <Animated.Text entering={FadeIn.duration(350)} style={sans(16, 'medium', C.ink, { lineHeight: 24 })}>
+              {p.why}
+            </Animated.Text>
+          ) : (
+            app.hasLlm && <Writing />
+          )}
           {p.anchors.length > 0 && (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 }}>
               {p.anchors.map((a) => {

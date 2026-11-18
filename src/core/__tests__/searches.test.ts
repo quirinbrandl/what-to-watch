@@ -3,7 +3,7 @@ import { describe, test } from 'node:test';
 
 import { Pick, Session } from '../engine/recommender';
 import { Services, newRequest, rejectReason, requestFromJson } from '../engine/request';
-import { MAX_SEARCHES, SavedSearch, addSearch, historyFromJson, historyToJson, searchFilters, searchTitle, whenLabel } from '../history';
+import { MAX_SEARCHES, SavedSearch, addSearch, historyFromJson, historyToJson, searchFilters, whenLabel } from '../history';
 import { LbExport, LbFilm, applyExport, dropWatchlistOnly } from '../letterboxd';
 import { Film, Library, makeFilm } from '../models';
 import { guessRegion, regionFromTimeZone } from '../region';
@@ -130,11 +130,10 @@ describe('saved searches', () => {
     assert.equal(list.filter((e) => e.id === list[0].id).length, 1);
   });
 
-  test('titles and details read like the user would say them', () => {
-    assert.equal(searchTitle(search('x', '  dark and funny ')), 'dark and funny');
-    assert.equal(searchTitle({ ...search('y', ''), seedTitle: 'Heat' }), 'More like Heat');
-    assert.equal(searchTitle(search('z', '')), 'Anything good tonight');
+  test('filters read like the user would say them; "more like" and the wish come first', () => {
     assert.deepEqual(searchFilters(search('x', '')), ['Netflix', 'Thriller', '1990–now']);
+    assert.deepEqual(searchFilters({ ...search('y', ''), seedTitle: 'Heat' }), ['More like Heat', 'Netflix', 'Thriller', '1990–now']);
+    assert.deepEqual(searchFilters(search('z', '  dark and funny ')), ['“dark and funny”', 'Netflix', 'Thriller', '1990–now']);
     const more = search('m', '');
     Object.assign(more.session.request, { obscurity: 0.25, excludeWatchlist: true, langs: ['ko'], personalize: false, recent: true });
     assert.deepEqual(searchFilters(more), ['Netflix', 'Thriller', '1990–now', 'Korean', 'Popular', 'not personal', 'not on watchlist', 'new releases']);

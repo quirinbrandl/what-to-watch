@@ -69,14 +69,6 @@ export function addSearch(list: SavedSearch[], e: SavedSearch, max = MAX_SEARCHE
   return [e, ...list.filter((x) => x.id !== e.id)].slice(0, max);
 }
 
-/** What the user asked for, in a few words. */
-export function searchTitle(e: SavedSearch): string {
-  const p = e.session.request.prompt.trim();
-  if (p) return p;
-  if (e.seedTitle) return `More like ${e.seedTitle}`;
-  return 'Anything good tonight';
-}
-
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const two = (n: number) => String(n).padStart(2, '0');
@@ -94,10 +86,16 @@ export function whenLabel(at: number, now = Date.now()): string {
   return d.getFullYear() === new Date(now).getFullYear() ? `${DAYS[d.getDay()]} ${date}` : `${date} ${d.getFullYear()}`;
 }
 
-/** The filters that shaped a search, briefly: services, genres, years, length. */
+/**
+ * The filters that shaped a search, briefly: the film it was "more like", the wish typed in,
+ * services, genres, years, length. A search has no name; this and its date tell it apart.
+ */
 export function searchFilters(e: SavedSearch): string[] {
   const r = e.session.request;
   const out: string[] = [];
+  if (e.seedTitle) out.push(`More like ${e.seedTitle}`);
+  const wish = r.prompt.trim();
+  if (wish) out.push(`“${wish}”`);
   if (e.services.length) out.push(e.services.map((s) => s.name).join(', '));
   if (r.genres.length) out.push(r.genres.map((g) => GENRES[g]).join(', '));
   if (r.notGenres.length) out.push(r.notGenres.map((g) => `no ${GENRES[g]}`).join(', '));

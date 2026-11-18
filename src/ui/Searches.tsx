@@ -6,7 +6,7 @@ import { discover } from '../app/discover';
 import { tick } from '../app/platform';
 import { useStore } from '../app/store';
 import { ui } from '../app/ui';
-import { SavedSearch, searchFilters, searchTitle, whenLabel } from '../core/history';
+import { SavedSearch, searchFilters, whenLabel } from '../core/history';
 
 import { Blank, Icon, Overlay, Poster, RoundButton } from './components';
 import { C, display, sans } from './theme';
@@ -54,12 +54,14 @@ function SearchCard({ e, current }: { e: SavedSearch; current: boolean }) {
   const picks = e.session.picks;
   const n = 5;
   const posterW = (width - 28 - 24 - 6 * (n - 1)) / n;
+  // A search has no name: when it was made and what it was filtered by tell it apart.
+  const when = whenLabel(e.at);
   const filters = searchFilters(e);
-  const title = searchTitle(e);
+  const count = picks.length === 1 ? '1 film' : `${picks.length} films`;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${title}. ${whenLabel(e.at)}. ${picks.length} films.`}
+      accessibilityLabel={`${when}. ${filters.length ? filters.join(', ') : 'No filters'}. ${count}.`}
       accessibilityHint="Shows these films again"
       onPress={() => {
         tick();
@@ -85,19 +87,20 @@ function SearchCard({ e, current }: { e: SavedSearch; current: boolean }) {
           gap: 8,
         }}>
         <View style={{ flex: 1, paddingLeft: 2 }}>
-          <Text style={sans(15.5, 'bold', C.ink, { lineHeight: 21 })} numberOfLines={2}>
-            {title}
+          <Text style={sans(15.5, 'bold', C.ink, { lineHeight: 21 })} numberOfLines={1}>
+            {when}
+            <Text style={sans(15.5, 'medium', C.dim)}>{`  ·  ${count}`}</Text>
           </Text>
-          <Text style={[sans(12.5, 'medium', C.dim, { lineHeight: 17 }), { marginTop: 4 }]} numberOfLines={2}>
-            {[whenLabel(e.at), `${picks.length} films`, ...filters].join('  ·  ')}
+          <Text style={[sans(13.5, 'semi', filters.length ? C.ink : C.dim, { lineHeight: 19 }), { marginTop: 4 }]} numberOfLines={3}>
+            {filters.length ? upFirst(filters.join('  ·  ')) : 'No filters'}
           </Text>
         </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Delete the search "${title}"`}
+          accessibilityLabel={`Delete the search from ${when}`}
           hitSlop={8}
           onPress={async () => {
-            if (await ui.confirm('Delete this search?', `"${title}" and its ${picks.length} films are removed from this list. Your library stays as it is.`, 'Delete', true)) discover.forget(e.id);
+            if (await ui.confirm('Delete this search?', `The search from ${when} and its ${count} are removed from this list. Your library stays as it is.`, 'Delete', true)) discover.forget(e.id);
           }}
           style={{
             width: 40,
@@ -112,3 +115,6 @@ function SearchCard({ e, current }: { e: SavedSearch; current: boolean }) {
     </Pressable>
   );
 }
+
+/** "new releases · Thriller" → "New releases · Thriller": the line starts like a title. */
+const upFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
