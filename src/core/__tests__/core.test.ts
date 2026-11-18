@@ -12,7 +12,8 @@ import { extractJson, extractJsonLines } from '../llm';
 import { Film, Library, Prov, filmFromJson, filmToJson, makeFilm, nowSec } from '../models';
 import { parseScenes, sceneParts } from '../engine/scenes';
 import { FilmCache, rankStills } from '../tmdb';
-import { Wall } from '../wall';
+import { MISS } from '../engine/recommender';
+import { Field, FieldInput, newField, speed, sprites, step } from '../field';
 
 function film(id: number, title: string, o: Partial<Film> & { year?: number; flat?: Prov[]; region?: string } = {}): Film {
   const { year = 2015, flat = [], region = 'DE', ...rest } = o;
@@ -381,53 +382,42 @@ describe('background scenes', () => {
   });
 });
 
-describe('wait screen wall', () => {
-  const visible = [8, 9, 10, 15, 16, 17, 1, 2, 3, 22, 23, 24]; // 12 of 28 tiles are in plain view
-  const mine = [...Array(28)].map((_, i) => `/mine${i}.jpg`);
-  const finalists = [...Array(36)].map((_, i) => film(100 + i, `F${i}`));
-  const lit = (w: Wall) => w.tiles.filter((t) => t.state !== 'out').map((t) => t.poster);
-  const inView = (w: Wall) => visible.map((i) => w.tiles[i]);
+describe('wait screen fly-through', () => {
+  const input = (o: Partial<FieldInput> = {}): FieldInput => ({ found: [], finalists: [], verdicts: [], done: false, miss: MISS, ...o });
+  const run = (f: Field, inp: FieldInput, secs: number) => {
+    for (let t = 0; t < secs; t += 1 / 30) step(f, inp, 1 / 30);
+  };
 
-  test('starts full with the user\'s films, then every found film gets a tile', () => {
-    const w = new Wall(28, visible, mine);
-    assert.equal(w.tiles.filter((t) => t.poster && t.state === 'in').length, 28);
-    const scouted = [...Array(40)].map((_, i) => `/s${i}.jpg`);
-    w.sync(scouted.slice(0, 10), [], new Map());
-    w.sync([...scouted.slice(0, 10), '/s3.jpg', ...scouted.slice(10)], [], new Map()); // a repeat is not shown twice
-    for (let i = 0; i < 28; i++) w.step();
-    const shown = w.tiles.map((t) => t.poster);
-    assert.equal(new Set(shown).size, 28);
-    assert.ok(shown.every((p) => p!.startsWith('/s')), 'after 28 beats every tile holds a found film');
-    // Nothing new arrives: the wall keeps changing with films found earlier.
-    for (let i = 0; i < 12; i++) w.step();
-    const before = w.tiles.reduce((a, t) => a + t.rev, 0);
-    for (let i = 0; i < 10; i++) w.step();
-    assert.ok(w.tiles.reduce((a, t) => a + t.rev, 0) >= before + 4);
-    assert.equal(new Set(w.tiles.map((t) => t.poster)).size, 28, 'no film is on the wall twice');
+  test('found films come off the far wall into the flight', () => {
+    const f = newField(400, 860);
+    run(f, input(), 2);
+    assert.ok(f.ps.length > 200 && f.ps.every((p) => p.film === ''), 'at first only the user\'s own films fly');
+    const found = [...Array(20)].map((_, i) => `/found${i}.jpg`);
+    run(f, input({ found }), 0.5);
+    const flying = new Set(f.ps.filter((p) => p.film).map((p) => p.film));
+    assert.equal(flying.size, 20, 'every found film is in the flight');
+    assert.ok(sprites(f).some((s) => s.film && s.edge > 0), 'found films carry the accent edge');
   });
 
-  test('the finalists take the tiles in view, the best eight stay lit, the picks are marked', () => {
-    const w = new Wall(28, visible, mine);
-    const verdicts = new Map<number, number>();
-    w.sync([], finalists, verdicts);
-    const wanted = new Set(finalists.map((f) => f.poster));
-    assert.ok(inView(w).every((t) => t.state === 'in' && wanted.has(t.poster)), 'every tile in view shows a finalist');
-    assert.ok(w.tiles.every((t) => t.state === 'out' || wanted.has(t.poster)), 'films that are not finalists step back');
+  test('the rated films gather, the better ones in front; below the cutoff they go back to the wall', () => {
+    const f = newField(400, 860);
+    const finalists = [...Array(30)].map((_, i) => `/f${i}.jpg`);
+    const verdicts: [string, number][] = [];
+    const inp = input({ found: finalists, finalists, verdicts });
+    run(f, inp, 3);
+    assert.equal(Object.keys(f.cloud).length, 30, 'every film being rated is in the cloud');
+    assert.ok(speed(f) < 0.3, 'the flight slows down while rating');
+    finalists.forEach((film, i) => verdicts.push([film, [2, 3, 4, 5, 2.5, 3.5][i % 6]]));
+    run(f, inp, 12);
+    const kept = finalists.filter((_, i) => [2, 3, 4, 5, 2.5, 3.5][i % 6] >= MISS);
+    assert.deepEqual(Object.keys(f.cloud).sort(), kept.sort(), 'only the films that make the feed stay');
+    const depth = (film: string) => f.ps[f.cloud[film]].z;
+    assert.ok(depth('/f3.jpg') < depth('/f2.jpg') && depth('/f2.jpg') < depth('/f1.jpg'), '5 stars in front of 4, 4 in front of 3');
+    assert.ok(!f.ps.some((p) => p.film === '/f0.jpg' && p.hold), 'a 2-star film has left the cloud');
 
-    // Verdicts arrive one by one; the later finalists (some of them not on the wall at all) are rated highest.
-    finalists.forEach((f, i) => {
-      verdicts.set(f.id, 1 + i * 0.1);
-      w.sync([], finalists, verdicts);
-      w.step();
-    });
-    const best = finalists.slice(-8).map((f) => f.poster).sort();
-    assert.deepEqual(lit(w).sort(), best);
-    assert.deepEqual(inView(w).filter((t) => t.state === 'in').map((t) => t.poster).sort(), best, 'and all eight are in view');
-
-    // The picks differ a little from the top eight: all of them end up marked and in view, nothing else is lit.
-    const picks = [...finalists.slice(-6), finalists[0], finalists[1]];
-    w.sync([], finalists, verdicts, picks);
-    assert.deepEqual(inView(w).filter((t) => t.state === 'keep').map((t) => t.poster).sort(), picks.map((f) => f.poster).sort());
-    assert.equal(w.tiles.filter((t) => t.state !== 'out').length, 8);
+    // The search is done: the flight stops, the cloud holds.
+    run(f, { ...inp, done: true }, 1);
+    assert.equal(speed(f), 0);
+    assert.deepEqual(Object.keys(f.cloud).sort(), kept.sort());
   });
 });

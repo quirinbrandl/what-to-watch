@@ -92,7 +92,7 @@ export const engineConfig = (model: string, o: Partial<EngineConfig> = {}): Engi
 /** With filters on and fewer films than this left, TMDB fills the list up. */
 const ENOUGH = 30;
 /** A film predicted below this is not a recommendation. */
-const MISS = 3;
+export const MISS = 3;
 /** The LLM knows no film released after this day (asked in November 2026: the same for every model tried). */
 export const KNOWN_UNTIL = '2024-06-30';
 /** How many new releases are put to the LLM, from which predicted rating they are worth showing, and how often one comes up at least. */
