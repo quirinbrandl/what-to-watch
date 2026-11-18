@@ -45,7 +45,10 @@ function useTap(onTap: () => void) {
   };
 }
 
-/** Results: one poster per screen, swipe up for the next, tap to flip. */
+/** How many films before and after the one on screen stay drawn; the rest of the list is empty space of the same height. */
+const KEPT = 2;
+
+/** Results: one poster per screen, swipe up for the next through everything the search found, tap to flip. */
 export function FeedScreen() {
   useStore(discover);
   useStore(app);
@@ -63,7 +66,7 @@ export function FeedScreen() {
   const pos = useSharedValue(0);
   const from = useSharedValue(0);
   const pageH = useSharedValue(1);
-  const last = useSharedValue(0); // index of the "more" page
+  const last = useSharedValue(0); // index of the page after the last film
   const shown = useRef(0);
   useEffect(() => {
     last.value = picks.length;
@@ -127,6 +130,10 @@ export function FeedScreen() {
     ),
   );
   const slide = useAnimatedStyle(() => ({ transform: [{ translateY: -pos.value * pageH.value }] }));
+  // Reasons and backgrounds are prepared a few films ahead of the one on screen.
+  useEffect(() => {
+    discover.view(at);
+  }, [at, generation, picks.length]);
   const current = s ? (picks[at] ?? picks[picks.length - 1])?.film : undefined;
   // Have the next backgrounds ready before they are swiped to.
   const scenes = picks.map((p) => p.film.scene).filter((x): x is string => !!x).join(' ');
@@ -140,8 +147,8 @@ export function FeedScreen() {
   } else if (!picks.length && !discover.running) {
     body = <Blank icon="funnel-outline" title="No film fits all of that" action="Change filters" onAction={() => ui.closeFeed()} />;
   } else if (height > 0) {
-    // All pages stay mounted and memoised: nothing re-renders while a swipe
-    // is in flight; the whole column moves on the UI thread.
+    // The pages near the one on screen stay mounted and memoised: nothing
+    // re-renders while a swipe is in flight; the whole column moves on the UI thread.
     body = (
       <PagerSwipe.Provider value={pager}>
         <GestureDetector gesture={pager}>
@@ -154,9 +161,7 @@ export function FeedScreen() {
             ]}
             onAccessibilityAction={(e) => go(e.nativeEvent.actionName === 'next' ? 1 : -1)}>
             <Animated.View style={[{ height: height * (picks.length + 1) }, slide]}>
-              {picks.map((p, i) => (
-                <PickPage key={p.film.id} pick={p} height={height} first={i === 0} />
-              ))}
+              {picks.map((p, i) => (Math.abs(i - at) <= KEPT ? <PickPage key={p.film.id} pick={p} height={height} first={i === 0} /> : <View key={p.film.id} style={{ height }} />))}
               <MorePage session={s} height={height} />
             </Animated.View>
           </View>
@@ -328,6 +333,7 @@ const PickPage = React.memo(function PickPage({ pick, height, first }: { pick: P
 
 /** Back of the card: the facts, and why this film fits this user. */
 function Back({ pick: p, onFlip }: { pick: Pick; onFlip: () => void }) {
+  useStore(discover); // the reason is written after the film is on screen
   const f = p.film;
   // A swipe that starts on the flipped card scrolls its text and never moves
   // on to another film, even at the end of the text; a swipe beside the card
@@ -347,7 +353,7 @@ function Back({ pick: p, onFlip }: { pick: Pick; onFlip: () => void }) {
             <ScoreRing film={f} />
             <Text style={sans(11, 'medium', C.dim, { lineHeight: 14 })}>{'TMDB\nuser score'}</Text>
             <View style={{ flex: 1 }} />
-            {p.personal && (
+            {p.personal && p.predicted !== undefined && (
               <View style={{ alignItems: 'flex-end' }} accessible accessibilityLabel={`Predicted for you: ${p.predicted.toFixed(1)} stars`}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Icon name="star" size={18} color={C.accent} />
@@ -361,7 +367,7 @@ function Back({ pick: p, onFlip }: { pick: Pick; onFlip: () => void }) {
             <ProviderRow film={f} sv={discover.services} />
           </View>
           <Text style={[caps(C.accent), { marginTop: 22, marginBottom: 8 }]}>WHY IT FITS</Text>
-          <Text style={sans(16, 'medium', C.ink, { lineHeight: 24 })}>{p.why}</Text>
+          <Text style={sans(16, 'medium', p.why === undefined ? C.dim : C.ink, { lineHeight: 24 })}>{p.why ?? 'Writing this for you…'}</Text>
           {p.anchors.length > 0 && (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 }}>
               {p.anchors.map((a) => {
@@ -402,15 +408,16 @@ function Back({ pick: p, onFlip }: { pick: Pick; onFlip: () => void }) {
   );
 }
 
+/** After the last film: the only place where going on means waiting, because new films have to be found first. */
 function MorePage({ session: s, height }: { session: Session; height: number }) {
   let body: React.ReactNode;
   if (discover.loadingMore) body = <Scouting compact />;
   else if (discover.error) body = <Blank icon="cloud-offline-outline" title={discover.error} action="Try again" onAction={() => void discover.more()} />;
-  else if (s.exhausted && !s.reserve.length) body = <Blank icon="checkmark-done-outline" title="That was everything" action="New search" onAction={() => ui.closeFeed()} />;
+  else if (s.exhausted) body = <Blank icon="checkmark-done-outline" title="That was everything" action="New search" onAction={() => ui.closeFeed()} />;
   else {
     body = (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <RoundButton icon="chevron-down" label="More films" size={92} onPress={() => void discover.more()} />
+        <RoundButton icon="chevron-down" label="Find more films" size={92} onPress={() => void discover.more()} />
         <Text style={[display(26), { marginTop: 16 }]}>More</Text>
       </View>
     );

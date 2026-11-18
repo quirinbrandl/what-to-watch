@@ -5,9 +5,8 @@ import { describe, test } from 'node:test';
 import { strToU8, zipSync } from 'fflate';
 
 import { b64urlDecode, b64urlEncode, verifyRs256 } from '../auth';
-import { tasteBrief, validateWhy } from '../engine/prompts';
+import { validateWhy } from '../engine/prompts';
 import { Services, newRequest, rejectReason } from '../engine/request';
-import { TasteModel } from '../engine/taste';
 import { LbFormatError, applyExport, applyRss, cleanUsername, matchScore, parseCsv, parseLetterboxdZip, parseRss } from '../letterboxd';
 import { extractJson, extractJsonLines } from '../llm';
 import { Film, Library, Prov, filmFromJson, filmToJson, makeFilm, nowSec } from '../models';
@@ -270,29 +269,6 @@ describe('hard filters', () => {
   });
 });
 
-describe('taste model', () => {
-  test('learns a simple preference', () => {
-    const cache = new FilmCache();
-    const lib = new Library();
-    for (let i = 0; i < 60; i++) {
-      const western = i % 2 === 0;
-      cache.put(film(i, `F${i}`, { genres: [western ? 37 : 35], directors: [western ? 'Loved Director' : `Other ${i}`], vote: 6.5 + (i % 5) * 0.2 }));
-      lib.rate(i, western ? 4.5 : 2.0);
-    }
-    const m = TasteModel.fromLibrary(lib, cache);
-    assert.equal(m.learned, true);
-    const w = m.predict(film(1000, 'New western', { genres: [37], directors: ['Loved Director'] }));
-    const c = m.predict(film(1001, 'New comedy', { genres: [35], directors: ['Someone'] }));
-    assert.ok(w.rating > c.rating + 1);
-    assert.ok(m.top('g').includes('Western'));
-    assert.ok(w.neighbors.length > 0);
-  });
-  test('works with an empty library', () => {
-    const m = TasteModel.fromLibrary(new Library(), new FilmCache());
-    assert.ok(m.predict(film(1, 'Great', { vote: 8.4, votes: 9000 })).rating > m.predict(film(2, 'Poor', { vote: 4.8, votes: 9000 })).rating);
-  });
-});
-
 describe('explanations', () => {
   const cache = new FilmCache();
   cache.put(film(1, 'Loved Film'));
@@ -316,12 +292,6 @@ describe('explanations', () => {
     assert.equal(w.text, 'A tense, patient thriller with the slow-burn dread of Loved Film. Dry humour keeps it light.');
     assert.deepEqual(w.refs, [1]);
     assert.equal(validateWhy('You adored [L2]. Fun.', tags, lib, cache), undefined, 'too little left');
-  });
-  test('taste brief hides held-out films and tags the rest', () => {
-    const b = tasteBrief(lib, cache, undefined, { tagged: true, hide: new Set([2]) });
-    assert.ok(b.text.includes('[L1] Loved Film (2015)'));
-    assert.ok(!b.text.includes('Hated Film'));
-    assert.deepEqual(b.tags, { L1: 1 });
   });
 });
 

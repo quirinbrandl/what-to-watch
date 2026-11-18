@@ -141,14 +141,14 @@ export function Scouting({ compact = false }: { compact?: boolean }) {
   const rated = app.lib.rated.length;
   const finalists = discover.finalists.length;
   const detail: Record<Stage, string> = {
-    taste: rated > 0 ? `Your ${rated} ratings and your watchlist` : 'Getting started',
+    taste: rated > 0 ? `Your ${rated} ratings` : 'Getting started',
     scouting: discover.pool > 0 ? `${discover.pool} candidates so far` : 'Looking for films you have not seen',
     checking: 'Year, length, genre and streaming',
-    judging: finalists > 0 ? (rated > 0 ? `Predicting your rating for ${finalists} finalists` : `Comparing ${finalists} finalists`) : 'Comparing the finalists',
+    judging: finalists > 0 ? (rated > 0 ? `Predicting your rating for ${finalists} films` : `Putting ${finalists} films in order`) : 'Putting the films in order',
   };
   const title = done ? 'Your picks' : STEPS[stage][1];
   const eta = late ? 'taking a little longer' : secondsLeft >= 50 ? `about ${Math.max(1, Math.round(secondsLeft / 60))} min left` : secondsLeft >= 8 ? `about ${Math.max(10, Math.round(secondsLeft / 10) * 10)} s left` : 'almost there';
-  const sub = done ? `${discover.reveal!.length} films for tonight` : `${detail[stage]} · ${eta}`;
+  const sub = done ? `${discover.found} films for tonight` : `${detail[stage]} · ${eta}`;
   const tiles = wall.current?.tiles ?? [];
 
   return (

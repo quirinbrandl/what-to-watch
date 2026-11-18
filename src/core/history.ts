@@ -110,6 +110,7 @@ export function searchFilters(e: SavedSearch): string[] {
   if (!r.personalize) out.push('not personal');
   if (!r.excludeWatched) out.push('rewatches');
   if (r.excludeWatchlist) out.push('not on watchlist');
+  if (r.recent) out.push('new releases');
   return out;
 }
 

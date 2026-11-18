@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import { Pick, Session } from '../engine/recommender';
-import { requestBrief } from '../engine/prompts';
 import { Services, newRequest, rejectReason, requestFromJson } from '../engine/request';
 import { MAX_SEARCHES, SavedSearch, addSearch, historyFromJson, historyToJson, searchFilters, searchTitle, whenLabel } from '../history';
 import { LbExport, LbFilm, applyExport, dropWatchlistOnly } from '../letterboxd';
@@ -14,7 +13,7 @@ import { FilmCache } from '../tmdb';
 const film = (id: number, title: string): Film =>
   makeFilm({ id, title, release: '2015-05-01', runtime: 110, genres: [18], lang: 'en', poster: `/p${id}.jpg`, vote: 7.5, votes: 2000, directors: ['A Director'], full: true });
 
-const pick = (f: Film): Pick => ({ film: f, predicted: 4.1, judge: 4, local: 3.9, match: 8, score: 4.3, why: 'Because.', anchors: [], facts: [], personal: true });
+const pick = (f: Film): Pick => ({ film: f, predicted: 4.1, why: 'Because.', anchors: [], facts: [], personal: true });
 
 describe('region from the phone, without location access', () => {
   const known = { DE: 'Germany', AT: 'Austria', US: 'United States', GB: 'United Kingdom', AU: 'Australia', AR: 'Argentina' };
@@ -58,15 +57,14 @@ describe('hide films on the watchlist', () => {
     assert.equal(newRequest().excludeWatchlist, false);
     assert.equal(requestFromJson({ prompt: 'x' }).excludeWatchlist, false);
     assert.equal(requestFromJson({ excludeWatchlist: true }).excludeWatchlist, true);
+    assert.equal(requestFromJson({ prompt: 'x' }).recent, false, 'new releases are off unless asked for');
     assert.equal(rejectReason(f, newRequest(), lib, sv), undefined);
-    assert.ok(!requestBrief(newRequest(), sv).includes('WATCHLIST'));
   });
 
-  test('when on, watchlist films are rejected and the model is told', () => {
+  test('when on, watchlist films are rejected', () => {
     const r = newRequest({ excludeWatchlist: true });
     assert.equal(rejectReason(f, r, lib, sv), 'watchlist');
     assert.equal(rejectReason(film(2, 'Other'), r, lib, sv), undefined);
-    assert.match(requestBrief(r, sv), /WATCHLIST are excluded/);
   });
 });
 
@@ -96,7 +94,6 @@ describe('saved searches', () => {
   const search = (id: string, prompt: string, at = Date.now()): SavedSearch => {
     const s = new Session(newRequest({ prompt, genres: [53], yearMin: 1990 }));
     s.picks = [pick(a), pick(b)];
-    s.reserve = [pick(b)];
     return { id, at, region: 'DE', services: [{ id: 8, name: 'Netflix', logo: '/n.png' }], session: s };
   };
 
@@ -108,7 +105,7 @@ describe('saved searches', () => {
     const e = back.list[0];
     assert.equal(e.session.request.prompt, 'slow-burn and clever');
     assert.deepEqual(e.session.picks.map((p) => p.film.title), ['Heat', 'Zodiac']);
-    assert.equal(e.session.reserve.length, 1);
+    assert.deepEqual(e.session.picks.map((p) => p.why), ['Because.', 'Because.']);
     assert.deepEqual(e.services, [{ id: 8, name: 'Netflix', logo: '/n.png' }]);
   });
 
@@ -139,8 +136,8 @@ describe('saved searches', () => {
     assert.equal(searchTitle(search('z', '')), 'Anything good tonight');
     assert.deepEqual(searchFilters(search('x', '')), ['Netflix', 'Thriller', '1990–now']);
     const more = search('m', '');
-    Object.assign(more.session.request, { obscurity: 0.25, excludeWatchlist: true, langs: ['ko'], personalize: false });
-    assert.deepEqual(searchFilters(more), ['Netflix', 'Thriller', '1990–now', 'Korean', 'Popular', 'not personal', 'not on watchlist']);
+    Object.assign(more.session.request, { obscurity: 0.25, excludeWatchlist: true, langs: ['ko'], personalize: false, recent: true });
+    assert.deepEqual(searchFilters(more), ['Netflix', 'Thriller', '1990–now', 'Korean', 'Popular', 'not personal', 'not on watchlist', 'new releases']);
   });
 
   test('when a search was made, relative to now', () => {

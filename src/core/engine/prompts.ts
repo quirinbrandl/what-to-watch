@@ -1,207 +1,222 @@
+// What the engine asks the LLM, and how its answers are read.
+//
+// Questions 1 and 2 are the ones that won the engine experiments (tool/lab/README.md). With no
+// typed request, no filter and the dial in the middle they are sent word for word as tested;
+// each feature in use adds one line or one sentence and changes nothing else.
+import { extractJson } from '../llm';
 import { Entry, Film, GENRES, LANGUAGES, Library, genreNames, labelOf } from '../models';
 import { FilmCache } from '../tmdb';
-import { Request, Services, hasPrompt } from './request';
-import { TasteModel } from './taste';
+import { Request, Services } from './request';
 
-const stars = (r: number) => `${r}★`;
+// ------------------------------------------------------------ the ratings
 
-/** The user's taste evidence as compact text for the LLM. */
-export interface TasteBrief {
-  text: string;
+/** The rated films the LLM is shown: highest rating first, then most recent. */
+export function ratedFilms(lib: Library, films: FilmCache, max = 500): Entry[] {
+  const recent = (a: Entry, b: Entry) => (b.ratingAt ?? 0) - (a.ratingAt ?? 0);
+  let rated = lib.rated.filter((e) => films.get(e.id) !== undefined);
+  if (rated.length > max) {
+    // A very large library: every strong opinion, then the most recent of the rest.
+    const strong = rated.filter((e) => e.rating! >= 4.5 || e.rating! <= 2.5).sort(recent);
+    const rest = rated.filter((e) => e.rating! < 4.5 && e.rating! > 2.5).sort(recent);
+    rated = [...strong, ...rest].slice(0, max);
+  }
+  return rated.sort((a, b) => b.rating! - a.rating! || recent(a, b));
+}
+
+export interface Ratings {
+  text: string; // '' when there is nothing to show
   tags: Record<string, number>; // "L12" -> TMDB id (only when tagged)
 }
 
 /**
- * `tagged` prefixes every rated film with a reference tag ([L12]) so the
- * judge can cite films in a way code can verify. `hide` omits films
- * (evaluation hold-out).
+ * The ratings in three plain groups: loved (4★ and up), liked (3 and 3.5★), did not like.
+ * With `tagged`, films rated 3.5★ or higher get a tag ([L12]) that a reason can point to
+ * and code can check.
  */
-export function tasteBrief(
-  lib: Library,
-  films: FilmCache,
-  model: TasteModel | undefined,
-  opts: { tagged?: boolean; hide?: Set<number>; maxRated?: number; listSeen?: boolean } = {},
-): TasteBrief {
-  const { tagged = false, hide = new Set<number>(), maxRated = 320, listSeen = true } = opts;
-  const lines: string[] = [];
+export function ratingsBlock(lib: Library, films: FilmCache, opts: { tagged?: boolean } = {}): Ratings {
   const tags: Record<string, number> = {};
-  const name = (id: number) => labelOf(films.get(id)!);
-  const known = (e: Entry) => !hide.has(e.id) && films.get(e.id) !== undefined;
-
-  let rated = lib.rated.filter(known);
-  if (rated.length > maxRated) {
-    // Keep every strong opinion, fill up with the most recent of the rest.
-    const strong = rated.filter((e) => e.rating! >= 4.5 || e.rating! <= 2.5 || e.favorite);
-    const rest = rated.filter((e) => !strong.includes(e)).sort((a, b) => (b.ratingAt ?? 0) - (a.ratingAt ?? 0));
-    rated = [...strong, ...rest.slice(0, Math.max(0, maxRated - strong.length))];
-  }
-  if (rated.length) {
-    const mean = rated.reduce((a, e) => a + e.rating!, 0) / rated.length;
-    lines.push(`RATINGS by this user (0.5–5★, their average is ${mean.toFixed(1)}★, ♥ = also liked):`);
-    const groups = new Map<number, Entry[]>();
-    for (const e of rated) {
-      const g = groups.get(e.rating!);
-      if (g) g.push(e);
-      else groups.set(e.rating!, [e]);
-    }
-    let n = 0;
-    for (const r of [...groups.keys()].sort((a, b) => b - a)) {
-      const items = groups.get(r)!.sort((a, b) => (b.ratingAt ?? 0) - (a.ratingAt ?? 0));
-      lines.push(
-        `${stars(r)}: ${items
-          .map((e) => {
-            let s = name(e.id);
-            if (tagged) {
-              const tag = `L${++n}`;
-              tags[tag] = e.id;
-              s = `[${tag}] ${s}`;
-            }
-            return e.liked ? `${s} ♥` : s;
-          })
-          .join('; ')}`,
-      );
-    }
-  }
-  const names = (es: Entry[], max: number) => es.filter(known).slice(0, max).map((e) => name(e.id));
-  const all = lib.all();
-  const fav = names(all.filter((e) => e.favorite), 20);
-  if (fav.length) lines.push(`ALL-TIME FAVOURITES: ${fav.join('; ')}`);
-  const re = names(all.filter((e) => e.rewatched && !e.favorite), 20);
-  if (re.length) lines.push(`REWATCHED: ${re.join('; ')}`);
-  const wl = names(lib.watchlist.sort((a, b) => (b.watchlistAt ?? 0) - (a.watchlistAt ?? 0)), 60);
-  if (wl.length) lines.push(`WATCHLIST (unseen, wants to see): ${wl.join('; ')}`);
-  const ni = names(all.filter((e) => e.notInterested), 40);
-  if (ni.length) lines.push(`NOT INTERESTED (dismissed): ${ni.join('; ')}`);
-  if (listSeen) {
-    const seen = names(all.filter((e) => e.watched && e.rating === undefined), 120);
-    if (seen.length) lines.push(`SEEN, UNRATED: ${seen.join('; ')}`);
-  }
-  if (model && model.rated >= 12) {
-    const parts = [
-      model.top('g').length ? `rates above their average: ${model.top('g', 5).join(', ')}` : '',
-      model.top('g', 6, false).length ? `below their average: ${model.top('g', 4, false).join(', ')}` : '',
-      model.top('d').length ? `directors: ${model.top('d', 6).join(', ')}` : '',
-      model.top('k').length ? `recurring themes in high ratings: ${model.top('k', 8).join(', ')}` : '',
-      model.top('k', 6, false).length ? `themes in low ratings: ${model.top('k', 6, false).join(', ')}` : '',
-    ].filter(Boolean);
-    if (parts.length) lines.push(`PATTERNS (computed statistics, weaker evidence than the ratings): ${parts.join(' · ')}`);
-  }
-  return { text: lines.join('\n').trim(), tags };
+  let n = 0;
+  const name = (e: Entry) => {
+    const label = labelOf(films.get(e.id)!);
+    if (!opts.tagged || e.rating! < 3.5) return label;
+    const tag = `L${++n}`;
+    tags[tag] = e.id;
+    return `[${tag}] ${label}`;
+  };
+  const rated = ratedFilms(lib, films);
+  const line = (title: string, items: Entry[]) => (items.length ? `${title}: ${items.map(name).join('; ')}` : '');
+  const lines = [
+    line('Loved', rated.filter((e) => e.rating! >= 4)),
+    line('Liked', rated.filter((e) => e.rating! >= 3 && e.rating! < 4)),
+    line('Did not like', rated.filter((e) => e.rating! < 3)),
+  ].filter(Boolean);
+  return { text: lines.length ? `My film ratings:\n${lines.join('\n')}` : '', tags };
 }
+
+// ------------------------------------------------- what the features add
+
+const listed = (items: string[], word: 'and' | 'or'): string => (items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} ${word} ${items[items.length - 1]}`);
+
+/** The typed request, or the film to find more like: one line, in both questions. */
+export function wishLine(r: Request, seed?: Film): string {
+  if (seed) return `What I want tonight: films like ${labelOf(seed)}, that give a similar experience.`;
+  const p = r.prompt.trim().replace(/\s+/g, ' ');
+  return p ? `What I want tonight: ${p}` : '';
+}
+
+/** One sentence per filter in use. Code enforces every filter anyway; this only saves wasted ideas. */
+export function filterSentences(r: Request, sv: Services): string[] {
+  const out: string[] = [];
+  if (r.yearMin !== undefined && r.yearMax !== undefined) out.push(r.yearMin === r.yearMax ? `Only films released in ${r.yearMin}.` : `Only films released from ${r.yearMin} to ${r.yearMax}.`);
+  else if (r.yearMax !== undefined) out.push(`Only films released in ${r.yearMax} or earlier.`);
+  else if (r.yearMin !== undefined) out.push(`Only films released in ${r.yearMin} or later.`);
+  const genres = r.genres.map((g) => GENRES[g]).filter(Boolean);
+  if (genres.length === 1) out.push(`Only ${genres[0]} films.`);
+  else if (genres.length) out.push(`Only films that are ${listed(genres, 'and')} at the same time.`);
+  const not = r.notGenres.map((g) => GENRES[g]).filter(Boolean);
+  if (not.length) out.push(`No ${listed(not, 'or')} films.`);
+  // Length is only a leaning here: asked to keep an exact limit, the LLM checks every film's runtime and takes three times as long.
+  if (r.runMin !== undefined && r.runMax !== undefined) out.push(`Prefer films around ${r.runMin} to ${r.runMax} minutes long.`);
+  else if (r.runMax !== undefined) out.push(`Prefer shorter films, around ${r.runMax} minutes or less.`);
+  else if (r.runMin !== undefined) out.push(`Prefer longer films, around ${r.runMin} minutes or more.`);
+  if (r.langs.length) out.push(`Only films whose original language is ${listed(r.langs.map((l) => LANGUAGES[l] ?? l), 'or')}.`);
+  if (r.streamingOnly && sv.names.length) out.push(`Only films that can be streamed on ${listed(sv.names, 'or')} (country: ${sv.region}).`);
+  return out;
+}
+
+/** The mainstream ↔ niche dial in its five steps. The middle says nothing. */
+export function dialSentence(obscurity: number): string {
+  const step = Math.max(0, Math.min(4, Math.round(obscurity * 4)));
+  return ['Only well-known films that many people have seen.', 'Prefer well-known films.', '', 'Prefer little-known films.', 'Only little-known films that few people have seen.'][step];
+}
+
+// -------------------------------------------------- question 1: propose
+
+export const PROPOSE_ROLE = 'You recommend films.';
+const PICKS_FORMAT = 'Answer with JSON only: {"picks":[{"t":"title","y":1999}]}';
 
 /**
- * Tonight's request as text. Hard filters are stated so the LLM does not
- * waste picks, but they are enforced by code regardless.
+ * Question 1: which films would I love? `ratings` is empty when the search is not personal.
+ * `avoid` lists films that must not come back (seen without a rating, dismissed, proposed before).
  */
-export function requestBrief(r: Request, sv: Services, seed?: Film): string {
-  const lines: string[] = [];
-  if (seed) lines.push(`MORE LIKE: ${labelOf(seed)} — films that give a similar experience, not just the same genre.`);
-  if (hasPrompt(r)) lines.push(`REQUEST (in the user's words): "${r.prompt.trim()}"`);
-  else if (!seed) lines.push('REQUEST: none — a great film for tonight.');
-  const hard = [
-    r.genres.length ? `must be ${r.genres.map((g) => GENRES[g]).join(' AND ')}` : '',
-    r.notGenres.length ? `must not be ${r.notGenres.map((g) => GENRES[g]).join(' or ')}` : '',
-    r.yearMin !== undefined || r.yearMax !== undefined ? `released ${r.yearMin ?? '…'}–${r.yearMax ?? 'today'}` : '',
-    r.runMin !== undefined || r.runMax !== undefined ? `runtime ${r.runMin ?? 0}–${r.runMax ?? '∞'} min` : '',
-    r.langs.length ? `original language: ${r.langs.map((l) => LANGUAGES[l] ?? l).join(' or ')}` : '',
-    r.streamingOnly && sv.names.length ? `must be streaming in ${sv.region} on: ${sv.names.join(', ')}` : '',
-  ].filter(Boolean);
-  if (hard.length) lines.push(`HARD FILTERS: ${hard.join('; ')}.`);
-  const o = r.obscurity;
-  lines.push(
-    `FAMILIAR↔OBSCURE: ${
-      o < 0.2
-        ? 'well-known, widely loved films'
-        : o < 0.4
-          ? 'lean towards well-known films'
-          : o <= 0.6
-            ? 'balanced mix of known films and discoveries'
-            : o <= 0.8
-              ? 'lean towards lesser-known films and discoveries'
-              : 'deep cuts: films most people have not heard of'
-    }.`,
-  );
-  if (!r.excludeWatched) lines.push('Rewatches are allowed: films the user has already seen may be suggested when they fit.');
-  if (r.excludeWatchlist) lines.push("Films on the user's WATCHLIST are excluded tonight: do not propose them.");
-  return lines.join('\n').trim();
+export function proposeUser(ratings: string, r: Request, sv: Services, k: number, opts: { seed?: Film; avoid?: string[] } = {}): string {
+  const base = !ratings
+    ? `Recommend ${k} great films, best first.`
+    : r.excludeWatched
+      ? `Recommend ${k} films I have not rated that I would love, best first.`
+      : `Recommend ${k} films that I would love to watch, best first. Films I have already seen are welcome.`;
+  const ask = [base, ...filterSentences(r, sv), dialSentence(r.obscurity)].filter(Boolean).join(' ');
+  const avoid = opts.avoid?.length ? `Do not recommend these: ${opts.avoid.join('; ')}` : '';
+  return [ratings, wishLine(r, opts.seed), avoid, `${ask}\n${PICKS_FORMAT}`].filter(Boolean).join('\n\n');
 }
 
-export const ideationSystem = `You are the scouting stage of a personal film recommender. You know cinema deeply: mainstream, arthouse, world cinema, classics and deep cuts.
+export interface Idea {
+  t: string;
+  y?: number;
+}
 
-Goal: propose feature films this specific user would rate 3★ or higher after watching — ideally 4★+ ("that was worth my evening"). Fit to their personal taste comes first, tonight's request second, everything else third.
+/** One {"t":"title","y":1999} entry, or undefined when it is something else. */
+export function ideaOf(p: any): Idea | undefined {
+  if (!p || typeof p.t !== 'string' || !p.t.trim()) return undefined;
+  const y = typeof p.y === 'number' ? Math.trunc(p.y) : parseInt(String(p.y), 10);
+  return { t: p.t.trim(), y: Number.isFinite(y) ? y : undefined };
+}
 
-How to work: study what separates their 4.5–5★ films from their ≤2.5★ films — tone, pacing, craft, themes, eras, directors, not just genres. Pick what a perceptive friend with exactly their taste would pick. Stay away from films that resemble what they rated low. Mix confident picks with a few well-reasoned stretches.
+/** Reads the answer to question 1. When it is broken as a whole (one bad entry), the entries are read one by one. */
+export function parsePicks(text: string): Idea[] {
+  const j = extractJson(text);
+  const list: unknown[] = Array.isArray(j?.picks) ? j!.picks : [];
+  if (!list.length) {
+    for (const m of text.matchAll(/\{[^{}]*\}/g)) {
+      try {
+        list.push(JSON.parse(m[0]));
+      } catch {}
+    }
+  }
+  return list.map(ideaOf).filter((x): x is Idea => !!x);
+}
 
-Rules:
-- Real, released feature films only (no series, shorts, or unreleased films). Give the common English release title (or the original title) and the release year.
-- Never propose a film listed under RATINGS, SEEN, NOT INTERESTED or ALREADY SUGGESTED (unless rewatches are allowed).
-- Obey every HARD FILTER. Code verifies them against TMDB and discards violations.
-- Follow the FAMILIAR↔OBSCURE preference.
-- Watchlist films are allowed when they truly fit tonight, but at most a quarter of the picks.
-- Spread the picks across directors, decades and countries unless the request narrows them.
+// ----------------------------------------------------- question 2: rate
 
-Output one JSON object and nothing else:
-{"seeds":[{"t":"title","y":1999}],"picks":[{"t":"title","y":1999}]}
-"seeds": films the request text itself names as a reference point (empty list if none).
-"picks": exactly the requested number of films, best first.`;
+export const RATE_ROLE = 'You predict how a person will rate films.';
+const STARS_FORMAT = 'Answer with JSON only: {"r":[[1,4.5],[2,3.0]]} (film number, predicted stars)';
 
-export const ideationSystemGeneric = `You are the scouting stage of a film recommender. The user switched personalisation off, so ignore personal taste: propose excellent, widely admired feature films that fit tonight's request.
-
-Rules:
-- Real, released feature films only. Give the common English release title (or the original title) and the release year.
-- Never propose a film listed under SEEN, NOT INTERESTED or ALREADY SUGGESTED (unless rewatches are allowed).
-- Obey every HARD FILTER. Code verifies them against TMDB and discards violations.
-- Follow the FAMILIAR↔OBSCURE preference. Spread picks across directors, decades and countries unless the request narrows them.
-
-Output one JSON object and nothing else:
-{"seeds":[{"t":"title","y":1999}],"picks":[{"t":"title","y":1999}]}
-"seeds": films the request text itself names as a reference point (empty list if none).
-"picks": exactly the requested number of films, best first.`;
-
-export const ideationUser = (taste: string, request: string, n: number, already: string[]): string =>
-  [taste, request, already.length ? `ALREADY SUGGESTED (do not repeat): ${already.join('; ')}` : '', `Propose ${n} films.`].filter(Boolean).join('\n\n');
-
-export const judgeSystem = `You are the judging stage of a personal film recommender. For every candidate, predict how THIS user would rate the film after watching it, and how well it fits tonight's request.
-
-Use what you know about each film — tone, pacing, craft, reputation, how viewers with similar taste respond — together with the user's ratings. The metadata shown only identifies the film; your knowledge of it matters more. Be calibrated to this user: use their scale in 0.5 steps, and be honest about likely misses. A falsely high score wastes their evening; below 3★ counts as a miss.
-
-Output JSON Lines — one line per candidate, in the given order, nothing else:
-{"c":7,"r":4.0,"m":8,"why":"…"}
-
-"r": predicted rating by this user, 0.5–5.
-"m": 0–10, fit to tonight's request text and soft preferences (10 = exactly what was asked for, 5 = loosely related, 0 = contradicts it). Without request text, judge how good an evening pick it is for this user.
-"why": at most 38 words, spoken to the user ("you"), concrete about why this film suits them and tonight's request: tone, craft, themes. Anchor it in their taste by referring to one or two films they rated 3.5★ or higher, using ONLY the tag form, e.g. "has the patient dread of [L12]" (the app prints the title). Never write the title of any film other than through a tag (a film the user names in tonight's request is the one exception), never state star ratings, never invent facts about the user, and reveal nothing beyond the basic premise — no spoilers. If no honest anchor exists, describe the film's appeal for tonight without one.`;
-
-export const judgeSystemGeneric = `You are the judging stage of a film recommender. Personalisation is off. For every candidate, estimate how much a general film lover would enjoy it and how well it fits tonight's request.
-
-Output JSON Lines — one line per candidate, in the given order, nothing else:
-{"c":7,"r":4.0,"m":8,"why":"…"}
-
-"r": expected enjoyment on a 0.5–5 star scale.
-"m": 0–10, fit to tonight's request (10 = exactly what was asked for, 5 = loosely related, 0 = contradicts it).
-"why": at most 38 words, spoken to the user ("you"), concrete about why this film suits tonight's request: tone, craft, themes. Never write the title of any other film, never invent facts about the user, and reveal nothing beyond the basic premise — no spoilers.`;
-
-export function candidateLine(n: number, f: Film): string {
-  const votes = f.votes >= 1000 ? `${(f.votes / 1000).toFixed(1)}k` : `${f.votes}`;
-  const ov = f.overview.length > 170 ? `${f.overview.slice(0, 170)}…` : f.overview;
+/** A film the LLM cannot know (released after its training), described by its facts. */
+export function factsLine(f: Film): string {
+  const overview = f.overview.length > 220 ? `${f.overview.slice(0, 220)}…` : f.overview;
   return [
-    `C${n}`,
     labelOf(f),
-    (f.runtime ?? 0) > 0 ? `${f.runtime} min` : '',
     genreNames(f).join(', '),
     f.lang && f.lang !== 'en' ? LANGUAGES[f.lang] ?? f.lang : '',
-    f.directors.length ? `dir. ${f.directors.slice(0, 2).join(', ')}` : '',
-    f.cast.length ? `cast: ${f.cast.slice(0, 3).join(', ')}` : '',
-    f.keywords.length ? `themes: ${f.keywords.slice(0, 7).map((k) => k.name).join(', ')}` : '',
-    `TMDB ${f.vote.toFixed(1)} (${votes} votes)`,
-    ov,
+    f.directors.length ? `directed by ${f.directors.slice(0, 2).join(', ')}` : '',
+    f.cast.length ? `with ${f.cast.slice(0, 3).join(', ')}` : '',
+    f.votes > 0 ? `TMDB users give it ${f.vote.toFixed(1)}` : '',
+    overview,
   ]
     .filter(Boolean)
     .join(' | ');
 }
 
-export const judgeUser = (taste: string, request: string, candidates: Film[]): string =>
-  [taste, request, `CANDIDATES:\n${candidates.map((f, i) => candidateLine(i + 1, f)).join('\n')}`].filter(Boolean).join('\n\n');
+/** Question 2: how would I rate each of these? With `facts`, for new releases the LLM is told about. */
+export function rateUser(ratings: string, films: Film[], opts: { wish?: string; facts?: boolean } = {}): string {
+  const ask = opts.facts
+    ? 'Predict the rating (0.5 to 5 stars) I would give each of these films I have not rated. They are new films you may not know, so each comes with its facts:'
+    : 'Predict the rating (0.5 to 5 stars) I would give each of these films I have not rated:';
+  const list = films.map((f, i) => `${i + 1}. ${opts.facts ? factsLine(f) : labelOf(f)}`).join('\n');
+  return [ratings, opts.wish ?? '', `${ask}\n${list}`, STARS_FORMAT].filter(Boolean).join('\n\n');
+}
+
+/** Reads the answer to question 2 for `n` films: index in the list (from 0) -> stars. */
+export function parseStars(text: string, n: number): Map<number, number> {
+  const j = extractJson(text);
+  let rows: unknown[] = Array.isArray(j?.r) ? j!.r : [];
+  if (!rows.length) rows = [...text.matchAll(STAR_PAIR)].map((m) => [m[1], m[2]]); // broken as a whole: pair by pair
+  const out = new Map<number, number>();
+  for (const e of rows) {
+    if (!Array.isArray(e)) continue;
+    const i = Number(e[0]);
+    const s = Number(e[1]);
+    if (Number.isInteger(i) && i >= 1 && i <= n && Number.isFinite(s) && !out.has(i - 1)) out.set(i - 1, Math.min(5, Math.max(0.5, s)));
+  }
+  return out;
+}
+
+/** One [film number, stars] pair in an answer to question 2. */
+export const STAR_PAIR = /\[\s*(\d+)\s*,\s*(\d+(?:\.\d+)?)\s*\]/g;
+/** One complete {...} entry without anything nested: a pick in answer 1, a line of reasons. */
+export const ENTRY = /\{[^{}]*\}/g;
+
+/**
+ * For an answer that arrives piece by piece: returns a function that takes the text so far
+ * and hands every newly completed match of `pattern` to `each`, once.
+ */
+export function reader(pattern: RegExp, each: (m: RegExpExecArray) => void): (text: string) => void {
+  const re = new RegExp(pattern.source, 'g');
+  let read = 0;
+  return (text) => {
+    re.lastIndex = read;
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+      read = re.lastIndex;
+      each(m);
+    }
+  };
+}
+
+// ------------------------------------------------------------- reasons
+
+export const WHY_ROLE = 'You explain film recommendations.';
+
+/**
+ * Why each film fits. `ratings` must be the tagged block (or empty when the search is not
+ * personal); films flagged `facts` are new releases and come with their facts.
+ */
+export function whyUser(ratings: string, films: { film: Film; facts?: boolean }[], wish = ''): string {
+  const ask = ratings
+    ? 'These films were recommended to me. For each one, tell me in one or two sentences (at most 35 words) why it suits me: its tone, craft or themes, speaking to me as "you". Point to one or two of my films above that it has something in common with, using only their tags, like "has the patient dread of [L12]". Write no other film titles, no star ratings and no spoilers.'
+    : 'These films were recommended to me. For each one, tell me in one or two sentences (at most 35 words) why it is worth my evening: its tone, craft or themes, speaking to me as "you". Write no other film titles and no spoilers.';
+  const list = films.map((x, i) => `${i + 1}. ${x.facts ? factsLine(x.film) : labelOf(x.film)}`).join('\n');
+  return [ratings, wish, `${ask}\n${list}`, 'Answer with JSON Lines only, one line per film: {"n":1,"why":"…"}'].filter(Boolean).join('\n\n');
+}
 
 export interface Why {
   text: string;

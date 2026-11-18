@@ -15,14 +15,13 @@ export interface Request {
   excludeWatchlist: boolean; // leave out films on the user's watchlist
   personalize: boolean;
   streamingOnly: boolean; // only films on the user's services
+  recent: boolean; // also bring new releases, which the LLM is too old to know
   seedId?: number; // "more like this"
 }
 
 export function newRequest(r: Partial<Request> = {}): Request {
-  return { prompt: '', genres: [], notGenres: [], langs: [], obscurity: 0.5, excludeWatched: true, excludeWatchlist: false, personalize: true, streamingOnly: false, ...r };
+  return { prompt: '', genres: [], notGenres: [], langs: [], obscurity: 0.5, excludeWatched: true, excludeWatchlist: false, personalize: true, streamingOnly: false, recent: false, ...r };
 }
-
-export const hasPrompt = (r: Request): boolean => r.prompt.trim().length > 0;
 
 export const hardFilterCount = (r: Request): number =>
   (r.genres.length ? 1 : 0) +
@@ -49,6 +48,7 @@ export function requestFromJson(j: any): Request {
     excludeWatchlist: j?.excludeWatchlist === true,
     personalize: j?.personalize !== false,
     streamingOnly: j?.streamingOnly === true,
+    recent: j?.recent === true,
     seedId: j?.seedId ?? undefined,
   });
 }

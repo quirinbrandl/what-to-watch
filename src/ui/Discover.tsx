@@ -110,6 +110,7 @@ export function DiscoverScreen() {
             {!r.personalize && <Chip label="Not personal" onPress={sheet} />}
             {!r.excludeWatched && <Chip label="Rewatches" onPress={sheet} />}
             {r.excludeWatchlist && <Chip label="Not on watchlist" onPress={sheet} />}
+            {r.recent && <Chip label="New releases" onPress={sheet} />}
           </GestureScrollView>
           <BigButton label="Find films" icon="sparkles" onPress={go} color={C.accent} ink={C.accentInk} style={{ marginTop: 10, marginHorizontal: 2, marginBottom: 2 }} />
         </View>
@@ -379,6 +380,7 @@ export function FilterSheet() {
         <ToggleRow icon="finger-print" label="Personalize with my taste" value={r.personalize} onChange={(v) => set(() => (r.personalize = v))} />
         <ToggleRow icon="eye-off-outline" label="Hide films I have seen" value={r.excludeWatched} onChange={(v) => set(() => (r.excludeWatched = v))} />
         <ToggleRow icon="bookmark-outline" label="Hide films on my watchlist" sub="For something you had not thought of yet" value={r.excludeWatchlist} onChange={(v) => set(() => (r.excludeWatchlist = v))} />
+        <ToggleRow icon="calendar-outline" label="Include new releases" sub="Since mid-2024, too new for ChatGPT" value={r.recent} onChange={(v) => set(() => (r.recent = v))} />
       </View>
       <View style={{ flexDirection: 'row', gap: 12, marginTop: 18 }}>
         <BigButton

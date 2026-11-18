@@ -40,7 +40,7 @@ The `android/` folder is committed and edited by hand (signing, trimmed permissi
 - **Full description:**
   WhatToWatch finds tonight's film. Tell it your mood, set a few filters, and swipe through full-screen posters picked for your personal taste. Flip a poster to see why it fits you.
 
-  • Learns from your ratings, watched films and watchlist — import your Letterboxd export and keep it in sync automatically
+  • Learns from your ratings — import your Letterboxd export and keep it in sync automatically
   • Mood prompt, genres, years, length, language, familiar ↔ obscure
   • Only films on the streaming services you pick for tonight, if you like
   • Your recent searches stay on the phone, ready to open again

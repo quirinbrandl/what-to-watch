@@ -53,7 +53,7 @@ export interface Settings {
   onboarded: boolean;
   welcomeSeen: boolean;
   flipHintSeen: boolean;
-  /** How long each stage of a search took lately, in seconds (taste, scouting, checking, judging). Feeds the progress bar. */
+  /** How long each stage of a search took lately, in seconds (ratings, proposing, checking, rating). Feeds the progress bar. */
   stageSecs?: number[];
   request: Request;
 }

@@ -18,13 +18,14 @@ export class Discover extends Observable {
   stage?: Stage;
   pool = 0;
   scouted: string[] = []; // poster paths for the wait screen
-  finalists: Film[] = []; // the films the judge is looking at
-  verdicts = new Map<number, number>(); // film id -> the judge's predicted rating, as it comes in
-  reveal?: Film[]; // the chosen films, shown on the wait screen for a moment before the feed opens
+  finalists: Film[] = []; // the films whose rating is being predicted
+  verdicts = new Map<number, number>(); // film id -> the predicted rating, as it comes in
+  reveal?: Film[]; // the best films found, shown on the wait screen for a moment before the feed opens
+  found = 0; // how many films the search brought in all
   private stageAt: number[] = []; // when each stage of this run began
   private choosing = new Set<number>(); // films whose background scene is being chosen right now
-  private verdictAt = [0, 0]; // when the judge's first and latest verdict came in
-  private verdictFrom = 0; // how far through the judging stage the bar was at the first verdict
+  private verdictAt = [0, 0]; // when the first and the latest predicted rating came in
+  private verdictFrom = 0; // how far through the last stage the bar was at the first predicted rating
   error?: string;
   llmError?: LlmError;
   generation = 0; // bumped for every new session (resets the feed)
@@ -102,7 +103,7 @@ export class Discover extends Observable {
     const e = this.searches.find((x) => x.id === id)!;
     this.currentId = id;
     this.session = e.session;
-    void this.scenes();
+    this.ahead(e.session, 0);
     // A saved pick must show complete details; refresh any that the film
     // cache only holds in list form.
     for (const p of e.session.picks) {
@@ -138,10 +139,11 @@ export class Discover extends Observable {
       if (run !== this.run) return;
       this.learnTimings();
       if (s.picks.length) {
-        // Let the wait screen land on the chosen films before the feed takes over.
-        this.reveal = s.picks.map((p) => p.film);
+        // Let the wait screen land on the best films before the feed takes over.
+        this.reveal = s.picks.slice(0, REVEAL).map((p) => p.film);
+        this.found = s.picks.length;
         this.notify();
-        void this.scenes(this.reveal);
+        this.ahead(s, 0);
         await sleep(REVEAL_MS);
         if (run !== this.run) return;
       }
@@ -161,6 +163,7 @@ export class Discover extends Observable {
     });
   }
 
+  /** A new round for the search on screen: the films it brings are added after the ones already there. */
   async more(): Promise<void> {
     const s = this.session;
     if (!s || this.running) return;
@@ -171,7 +174,33 @@ export class Discover extends Observable {
     await this.go((run) => app.rec.more(s, (p) => this.progress(run, p)).then(() => {}));
     this.loadingMore = false;
     this.notify();
-    void this.scenes();
+  }
+
+  /**
+   * The feed shows film `i`. Reasons and backgrounds are made a few films at a time: for the
+   * batch on screen and the one after it, so they are there before their film is.
+   */
+  view(i: number): void {
+    if (this.session) this.ahead(this.session, i);
+  }
+
+  private ahead(s: Session, i: number): void {
+    if (!app.hasLlm) return;
+    const batch = app.rec.cfg.batch;
+    const upTo = (Math.floor(Math.max(0, i) / batch) + 2) * batch;
+    void this.reasons(s, upTo);
+    void this.scenes(s.picks.slice(0, upTo).map((p) => p.film));
+  }
+
+  private async reasons(s: Session, upTo: number): Promise<void> {
+    if (!s.picks.slice(0, upTo).some((p) => p.why === undefined)) return;
+    try {
+      app.rec.cfg.model = await app.model();
+      await app.rec.explain(s, upTo, () => this.notify());
+      this.persist();
+    } catch {
+      // Best effort: the card shows the film without a reason.
+    }
   }
 
   cancel(): void {
@@ -204,7 +233,7 @@ export class Discover extends Observable {
     if (run !== this.run) return;
     const i = STAGES.indexOf(p.stage);
     if (this.stage !== undefined && i < STAGES.indexOf(this.stage)) {
-      // A second round started (the first found too little): the wait begins again.
+      // The engine started over: the wait begins again.
       this.stageAt = [];
       this.finalists = [];
       this.verdicts = new Map();
@@ -265,8 +294,8 @@ export class Discover extends Observable {
 
   /**
    * How far the current search is, for the progress bar. Time-based, from how
-   * long each stage took in recent searches; once the judge starts writing its
-   * verdicts, their count is the clock. It slows down instead of finishing
+   * long each stage took in recent searches; once the predicted ratings start
+   * to come in, their count is the clock. It slows down instead of finishing
    * early when a stage runs long.
    */
   progressNow(now = Date.now()): {
@@ -309,10 +338,10 @@ export class Discover extends Observable {
     app.changed();
   }
 
-  /** Picks a real scene as the background for each film on show. Runs after the films are already visible. */
-  private async scenes(of?: Film[]): Promise<void> {
+  /** Picks a real scene as the background for each of these films. Runs after the films are already visible. */
+  private async scenes(of: Film[]): Promise<void> {
     if (!app.hasLlm) return;
-    const films = (of ?? this.session?.picks.map((p) => p.film) ?? []).filter((f) => f.scene === undefined && !this.choosing.has(f.id));
+    const films = of.filter((f) => f.scene === undefined && !this.choosing.has(f.id));
     if (!films.length) return;
     for (const f of films) this.choosing.add(f.id);
     try {
@@ -330,23 +359,23 @@ export class Discover extends Observable {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const newId = () => `${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
-/** How long the wait screen shows the chosen films before the feed opens. */
+/** How long the wait screen shows the best films before the feed opens, and how many of them. */
 const REVEAL_MS = 1500;
+const REVEAL = 8;
 /** Typical stage lengths in seconds before any search has been timed on this device. */
-const STAGE_SECS = [1, 45, 3, 55];
+const STAGE_SECS = [1, 22, 2, 17];
 /** The share of a stage that counts as done after `f` times its usual length: steady up to 80 %, then ever slower, never full. */
 const timeShare = (f: number) => (f < 0.8 ? f : 0.8 + 0.19 * (1 - Math.exp(-(f - 0.8) * 2.5)));
 
 export const discover = new Discover();
 
 // The films of the saved searches must not be pruned from the film cache.
-// Films held in reserve for "more" are kept for the three newest searches.
 app.pinned = () => {
   const ids: number[] = [];
-  const add = (s: Session, reserve: boolean) => {
-    for (const p of reserve ? [...s.picks, ...s.reserve] : s.picks) ids.push(p.film.id, ...p.anchors.map((a) => a.id));
+  const add = (s: Session) => {
+    for (const p of s.picks) ids.push(p.film.id, ...p.anchors.map((a) => a.id));
   };
-  if (discover.session) add(discover.session, true);
-  discover.searches.forEach((e, i) => add(e.session, i < 3));
+  if (discover.session) add(discover.session);
+  for (const e of discover.searches) add(e.session);
   return ids;
 };

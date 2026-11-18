@@ -418,7 +418,7 @@ export class Library {
   lbGap = false; // RSS may have missed entries (>50 logs between syncs)
   unmatched: string[] = []; // Letterboxd films we could not find on TMDB
   lbKeys: Record<string, number> = {}; // Letterboxd "title|year" -> TMDB id chosen at import
-  rev = 0; // bumped on every change (cache key for the taste model)
+  rev = 0; // bumped on every change
 
   entry(id: number): Entry {
     let e = this.entries.get(id);
