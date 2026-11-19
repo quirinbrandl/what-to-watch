@@ -1,5 +1,5 @@
 import { matchTitle } from '../letterboxd';
-import { Llm, LlmError } from '../llm';
+import { LlmClient, LlmError } from '../llm';
 import { Entry, Film, Library, genreNames, labelOf, scoreOf } from '../models';
 import { FilmCache, Tmdb } from '../tmdb';
 import { ENTRY, Idea, PROPOSE_ROLE, RATE_ROLE, STAR_PAIR, WHY_ROLE, ideaOf, parsePicks, parseStars, proposeUser, rateUser, ratingsBlock, reader, validateWhy, whyUser, wishLine } from './prompts';
@@ -116,7 +116,7 @@ export class Recommender {
   private explaining = new Set<Session>();
   private wanted = new WeakMap<Session, number>();
 
-  constructor(readonly tmdb: Tmdb, readonly llm: Llm, readonly lib: Library, public sv: Services, public cfg: EngineConfig) {}
+  constructor(readonly tmdb: Tmdb, readonly llm: LlmClient, readonly lib: Library, public sv: Services, public cfg: EngineConfig) {}
 
   get films(): FilmCache {
     return this.tmdb.cache;

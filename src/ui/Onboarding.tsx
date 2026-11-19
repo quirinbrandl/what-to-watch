@@ -77,7 +77,7 @@ export function Onboarding() {
     const ok = await signInFlow(false);
     setBusy(false);
     if (!ok) return;
-    if (!app.settings.welcomeSeen && !app.settings.useApiKey) {
+    if (!app.settings.welcomeSeen && app.settings.llm === 'chatgpt') {
       app.settings.welcomeSeen = true;
       app.changed();
       setStep('welcome');
@@ -124,7 +124,14 @@ export function Onboarding() {
           <Animated.View key="signin" entering={FadeInDown.duration(320)}>
             <Wordmark size={50} mark />
             <BigButton label="Continue with ChatGPT" onPress={signIn} busy={busy} style={{ marginTop: 34 }} />
-            {busy ? link('Cancel', () => app.auth.cancelSignIn()) : link('Use an OpenAI API key', async () => (await apiKeyFlow()) && setStep('question'))}
+            {busy ? (
+              link('Cancel', () => app.auth.cancelSignIn())
+            ) : (
+              <>
+                {link('Use an OpenAI API key', async () => (await apiKeyFlow('openai')) && setStep('question'))}
+                {link('Use a Claude API key', async () => (await apiKeyFlow('claude')) && setStep('question'))}
+              </>
+            )}
           </Animated.View>
         )}
         {step === 'welcome' && (

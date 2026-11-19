@@ -7,7 +7,7 @@ Tell it your mood, set a few filters and swipe through full-screen posters picke
 - **Personal:** recommends from your ratings. Import your Letterboxd export once; new diary entries sync automatically.
 - **Honest:** every film is a real TMDB title, hard filters are enforced by code, and the "why" only refers to films you actually rated.
 - **Local-first:** no backend, no account with us, no analytics. Your library lives on your phone. See [PRIVACY.md](PRIVACY.md).
-- **Bring your own model:** "Continue with ChatGPT" uses your ChatGPT plan; an OpenAI API key works too (Settings → Advanced).
+- **Bring your own model:** "Continue with ChatGPT" uses your ChatGPT plan; an OpenAI or Claude API key works too (Settings → Advanced).
 - **Per search, not per account:** the streaming services are a filter like any other — Disney+ tonight with friends, only Netflix tomorrow. The country is guessed from the phone's time zone (no location access, no extra network call) and can be changed next to the services.
 - **Nothing found twice:** every search is kept on the phone (the last 20). "Your searches" on the home screen brings one back instantly, with its films and their order.
 
@@ -92,7 +92,8 @@ Release builds, signing and the Play Store listing: [docs/play-store.md](docs/pl
 src/core/        platform-neutral TypeScript, shared by the app and the engine lab
   engine/        request + hard filters, the questions for the LLM, recommender, scene picking
   auth.ts        Sign in with ChatGPT (PKCE, loopback redirect, ID-token check, rotating refresh)
-  llm.ts         streaming Responses API client
+  llm.ts         streaming Responses API client (OpenAI) and the interface the engine uses
+  claude.ts      Claude client on the Anthropic SDK, for a Claude API key
   letterboxd.ts  ZIP import, TMDB matching, RSS sync
   tmdb.ts        TMDB client and film cache
   wall.ts        what the wait screen's poster wall shows, without the drawing

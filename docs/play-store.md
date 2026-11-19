@@ -48,7 +48,7 @@ The `android/` folder is committed and edited by hand (signing, trimmed permissi
   • Local-first: no account with us, no server, no analytics, no ads. Your library never leaves your phone except to create your recommendations
   • Open source (MIT)
 
-  Recommendations use your own ChatGPT plan via Sign in with ChatGPT, or your own OpenAI API key.
+  Recommendations use your own ChatGPT plan via Sign in with ChatGPT, or your own OpenAI or Claude API key.
   Film data and images from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB. Streaming availability by JustWatch.
 - **Category:** Entertainment
 - **Privacy policy URL:** host `PRIVACY.md` (e.g. GitHub Pages or the raw file in the public repository) and paste the link.
@@ -59,7 +59,7 @@ The `android/` folder is committed and edited by hand (signing, trimmed permissi
 | Question | Answer |
 |---|---|
 | Does the app collect or share user data? | **No data collected by the developer.** Nothing is sent to developer-owned servers. |
-| Data sent off device | To create recommendations, ratings/titles and the request text go from the device straight to OpenAI under the user's own account; film look-ups go to TMDB; a public RSS feed is read from Letterboxd. Under Play's definitions this is user-initiated transfer to services the user chose, not collection by the developer — declare it in the listing text and privacy policy as above. |
+| Data sent off device | To create recommendations, ratings/titles and the request text go from the device straight to OpenAI or Anthropic (whichever the user set up) under the user's own account; film look-ups go to TMDB; a public RSS feed is read from Letterboxd. Under Play's definitions this is user-initiated transfer to services the user chose, not collection by the developer — declare it in the listing text and privacy policy as above. |
 | Is data encrypted in transit? | Yes (HTTPS only). |
 | Can users request deletion? | Yes, in-app: Settings → Delete everything. |
 | Account creation | No app account. Optional sign-in with the user's ChatGPT account. |

@@ -5,7 +5,7 @@
 // model looks at a handful of small candidate images per film and picks one
 // that shows an actual moment of the film. One cheap call per batch of picks
 // (about 75 tokens per image); the choice is cached on the film.
-import { Llm, UserPart, extractJsonLines } from '../llm';
+import { LlmClient, UserPart, extractJsonLines } from '../llm';
 import { Film, labelOf } from '../models';
 import { Tmdb } from '../tmdb';
 
@@ -53,7 +53,7 @@ export function parseScenes(text: string, items: SceneItem[]): Map<number, strin
  * (and on the cached copy). Films whose lookup or model call fails stay
  * undecided and are tried again next time. Returns how many were decided.
  */
-export async function pickScenes(tmdb: Tmdb, llm: Llm, model: string, films: Film[], onSome?: () => void): Promise<number> {
+export async function pickScenes(tmdb: Tmdb, llm: LlmClient, model: string, films: Film[], onSome?: () => void): Promise<number> {
   const todo = films.filter((f) => f.scene === undefined);
   let done = 0;
   const set = (f: Film, scene: string) => {
@@ -71,9 +71,11 @@ export async function pickScenes(tmdb: Tmdb, llm: Llm, model: string, films: Fil
   }
   if (done) onSome?.();
   // The first films are on screen first, so they get a small call of their own that answers sooner.
-  const groups = [ask.slice(0, 3), ask.slice(3)].filter((g) => g.length);
+  // The rest go in groups of at most 18 films (90 images): Claude takes up to 100 images per request.
+  const groups = [ask.slice(0, 3)];
+  for (let i = 3; i < ask.length; i += 18) groups.push(ask.slice(i, i + 18));
   await Promise.all(
-    groups.map(async (items) => {
+    groups.filter((g) => g.length).map(async (items) => {
       try {
         const text = await llm.respond({ model, developer: sceneSystem, user: sceneParts(items), effort: 'low', retries: 0 });
         for (const [id, scene] of parseScenes(text, items)) set(items.find((it) => it.film.id === id)!.film, scene);

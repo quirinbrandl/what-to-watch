@@ -3,11 +3,12 @@ import { useSyncExternalStore } from 'react';
 import { AppState as NativeAppState } from 'react-native';
 
 import { AuthError, ChatGptAuth } from '../core/auth';
+import { ClaudeLlm } from '../core/claude';
 import { Recommender, engineConfig } from '../core/engine/recommender';
 import { Request, Services, newRequest, requestFromJson } from '../core/engine/request';
 import { Service } from '../core/history';
 import { LbExport, LbNotFound, applyExport, applyRss, cleanUsername, dropWatchlistOnly, fetchRss, matchExport, seedMatches } from '../core/letterboxd';
-import { Llm, LlmError, LlmModel } from '../core/llm';
+import { Llm, LlmClient, LlmError, LlmModel } from '../core/llm';
 import { Film, Library, Prov } from '../core/models';
 import { guessRegion } from '../core/region';
 import { FilmCache, Tmdb } from '../core/tmdb';
@@ -49,7 +50,8 @@ export interface Settings {
   /** The streaming services picked in the filter for the next search; empty = anywhere. */
   services: Service[];
   model?: string;
-  useApiKey: boolean;
+  /** How the app reaches a model: the ChatGPT plan (signed in), or the user's own OpenAI or Claude API key. */
+  llm: LlmAccess;
   onboarded: boolean;
   welcomeSeen: boolean;
   flipHintSeen: boolean;
@@ -57,6 +59,9 @@ export interface Settings {
   stageSecs?: number[];
   request: Request;
 }
+
+export type LlmAccess = 'chatgpt' | 'openai' | 'claude';
+export type ApiKeyKind = Exclude<LlmAccess, 'chatgpt'>;
 
 /** Where the phone is, from its time zone and language settings; no location access, no network. */
 function deviceRegion(): string {
@@ -77,7 +82,7 @@ export const servicesOf = (region: string, list: Service[]): Services => new Ser
 const newSettings = (): Settings => ({
   region: deviceRegion(),
   services: [],
-  useApiKey: false,
+  llm: 'chatgpt',
   onboarded: false,
   welcomeSeen: false,
   flipHintSeen: false,
@@ -94,7 +99,8 @@ function settingsFromJson(j: any): Settings {
     s.services = Object.entries(j.providers as Record<string, string>).map(([id, name]) => ({ id: Number(id), name: String(name), logo: j.providerLogos?.[id] ?? null }));
   }
   s.model = j?.model ?? undefined;
-  s.useApiKey = j?.useApiKey === true;
+  // Older versions only knew the ChatGPT plan and an OpenAI key (`useApiKey`).
+  s.llm = j?.llm === 'openai' || j?.llm === 'claude' ? j.llm : j?.useApiKey === true ? 'openai' : 'chatgpt';
   s.onboarded = j?.onboarded === true;
   s.welcomeSeen = j?.welcomeSeen === true;
   s.flipHintSeen = j?.flipHintSeen === true;
@@ -111,7 +117,7 @@ export interface ImportProgress {
   posters: string[];
 }
 
-const API_KEY = 'openai_api_key';
+const KEY_SLOT: Record<ApiKeyKind, string> = { openai: 'openai_api_key', claude: 'claude_api_key' };
 
 /**
  * App-wide state: library, settings, accounts and the services built on
@@ -123,10 +129,17 @@ export class AppState extends Observable {
   settings = newSettings();
   readonly tmdb = new Tmdb(this.films);
   readonly auth = new ChatGptAuth(authPlatform);
-  readonly llm = new Llm(() => this.token());
+  /** The user's own API keys, by kind. */
+  keys: Partial<Record<ApiKeyKind, string>> = {};
+  private readonly openai = new Llm(() => this.token());
+  private readonly claude = new ClaudeLlm(() => this.keys.claude);
+  /** Whichever service is in use right now. */
+  readonly llm: LlmClient = {
+    models: () => this.client().models(),
+    respond: (opts) => this.client().respond(opts),
+  };
   readonly rec = new Recommender(this.tmdb, this.llm, this.lib, this.services, engineConfig(''));
   ready = false;
-  apiKey?: string;
   models: LlmModel[] = [];
   importing?: ImportProgress;
   syncing = false;
@@ -140,7 +153,15 @@ export class AppState extends Observable {
     return servicesOf(this.settings.region, this.settings.services);
   }
   get hasLlm(): boolean {
-    return this.settings.useApiKey ? !!this.apiKey : this.auth.signedIn;
+    const via = this.settings.llm;
+    return via === 'chatgpt' ? this.auth.signedIn : !!this.keys[via];
+  }
+  /** The service's name, for texts. */
+  get llmName(): string {
+    return this.settings.llm === 'claude' ? 'Claude' : 'ChatGPT';
+  }
+  private client(): LlmClient {
+    return this.settings.llm === 'claude' ? this.claude : this.openai;
   }
 
   async init(): Promise<void> {
@@ -150,7 +171,7 @@ export class AppState extends Observable {
       if (l) this.lib.replaceWith(Library.fromJson(l));
       if (f) this.films.load(f);
       await this.auth.load();
-      this.apiKey = (await secrets.read(API_KEY)) ?? undefined;
+      for (const kind of ['openai', 'claude'] as const) this.keys[kind] = (await secrets.read(KEY_SLOT[kind])) ?? undefined;
     } catch {}
     this.rec.sv = this.services;
     this.ready = true;
@@ -193,10 +214,11 @@ export class AppState extends Observable {
 
   // ------------------------------------------------------------ LLM access
 
+  /** Credential for the OpenAI client: the API key or the ChatGPT session. */
   private async token(): Promise<string> {
-    if (this.settings.useApiKey) {
-      if (!this.apiKey) throw new LlmError('signed_out', 'no key');
-      return this.apiKey;
+    if (this.settings.llm === 'openai') {
+      if (!this.keys.openai) throw new LlmError('signed_out', 'no key');
+      return this.keys.openai;
     }
     try {
       return await this.auth.accessToken();
@@ -223,8 +245,8 @@ export class AppState extends Observable {
     this.notify();
     try {
       await done;
-      this.settings.useApiKey = false;
-      void this.loadModels();
+      if (this.settings.llm === 'chatgpt') void this.loadModels();
+      else this.use('chatgpt');
     } finally {
       clearTimeout(timer);
       sub.remove();
@@ -240,24 +262,39 @@ export class AppState extends Observable {
     return ok;
   }
 
-  /** Stores (or with undefined removes) an OpenAI API key; verifies it first. */
-  async setApiKey(key: string | undefined): Promise<void> {
+  /**
+   * Stores an OpenAI or Claude API key and starts using it; the key is
+   * verified first (throws when it is not accepted). With undefined the key
+   * is removed, and if it was in use the app falls back to whatever else is
+   * set up.
+   */
+  async setApiKey(key: string | undefined, kind: ApiKeyKind = 'openai'): Promise<void> {
     if (key === undefined) {
-      this.apiKey = undefined;
-      await secrets.write(API_KEY, null);
-      this.settings.useApiKey = false;
-      this.models = [];
+      this.keys[kind] = undefined;
+      await secrets.write(KEY_SLOT[kind], null);
+      if (this.settings.llm === kind) {
+        const other: ApiKeyKind = kind === 'openai' ? 'claude' : 'openai';
+        this.use(this.auth.signedIn || !this.keys[other] ? 'chatgpt' : other);
+      }
       this.changed();
-      if (this.hasLlm) void this.loadModels();
       return;
     }
-    const list = await new Llm(async () => key).models(); // throws when the key is bad
-    this.apiKey = key;
-    await secrets.write(API_KEY, key);
-    this.settings.useApiKey = true;
-    this.settings.model = undefined;
+    const list = await (kind === 'claude' ? new ClaudeLlm(() => key) : new Llm(async () => key)).models();
+    this.keys[kind] = key;
+    await secrets.write(KEY_SLOT[kind], key);
+    this.use(kind);
     this.models = list;
     this.changed();
+  }
+
+  /** Switches to another service that is already set up. Model choices belong to one service, so they reset. */
+  use(via: LlmAccess): void {
+    if (this.settings.llm === via) return;
+    this.settings.llm = via;
+    this.settings.model = undefined;
+    this.models = [];
+    this.changed();
+    if (this.hasLlm) void this.loadModels();
   }
 
   async loadModels(): Promise<void> {
@@ -422,7 +459,8 @@ export class AppState extends Observable {
     this.lib.replaceWith(Library.fromJson(j.library));
     if (j.settings) {
       const keep = this.settings;
-      this.settings = { ...settingsFromJson(j.settings), onboarded: true, useApiKey: keep.useApiKey, welcomeSeen: keep.welcomeSeen };
+      // The service and its model stay as set up on this device.
+      this.settings = { ...settingsFromJson(j.settings), onboarded: true, llm: keep.llm, model: keep.model, welcomeSeen: keep.welcomeSeen };
     }
     this.rec.sv = this.services;
     this.changed();
@@ -438,8 +476,8 @@ export class AppState extends Observable {
       await this.auth.signOut();
     } catch {}
     await this.auth.wipe().catch(() => {});
-    await secrets.write(API_KEY, null).catch(() => {});
-    this.apiKey = undefined;
+    for (const slot of Object.values(KEY_SLOT)) await secrets.write(slot, null).catch(() => {});
+    this.keys = {};
     this.models = [];
     this.lib.replaceWith(new Library());
     this.films.films.clear();

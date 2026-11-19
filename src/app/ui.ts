@@ -1,7 +1,8 @@
+import { LlmError } from '../core/llm';
 import { Film } from '../core/models';
 
 import { discover } from './discover';
-import { Observable, app } from './store';
+import { ApiKeyKind, Observable, app } from './store';
 
 export interface Choice {
   key: string;
@@ -128,7 +129,7 @@ export const ui = new Ui();
  * outside onboarding (onboarding has its own welcome screen).
  */
 export async function showPlanWelcome(): Promise<void> {
-  if (app.settings.welcomeSeen || app.settings.useApiKey) return;
+  if (app.settings.welcomeSeen || app.settings.llm !== 'chatgpt') return;
   app.settings.welcomeSeen = true;
   app.changed();
   await ui.info("You're in!", 'WhatToWatch uses your ChatGPT plan to find your films. You can check your usage anytime in your ChatGPT settings.');
@@ -147,15 +148,22 @@ export async function signInFlow(welcome = true): Promise<boolean> {
   }
 }
 
-export async function apiKeyFlow(): Promise<boolean> {
-  const key = (await ui.ask('OpenAI API key', { hint: 'sk-…', secret: true, action: 'Use key' }))?.trim();
+export const KEY_NAME: Record<ApiKeyKind, string> = { openai: 'OpenAI API key', claude: 'Claude API key' };
+const KEY_HINT: Record<ApiKeyKind, string> = { openai: 'sk-…', claude: 'sk-ant-…' };
+
+/** Asks for an API key, checks it and starts using it. */
+export async function apiKeyFlow(kind: ApiKeyKind = 'openai'): Promise<boolean> {
+  const key = (await ui.ask(KEY_NAME[kind], { hint: KEY_HINT[kind], secret: true, action: 'Use key' }))?.trim();
   if (!key) return false;
   try {
-    await app.setApiKey(key);
+    await app.setApiKey(key, kind);
     ui.toast('API key saved on this device');
     return true;
-  } catch {
-    ui.toast('That key was not accepted');
+  } catch (e) {
+    // Error codes only; never the key.
+    if (__DEV__) console.warn('api key check failed:', e instanceof LlmError ? `${e.code} ${e.status ?? ''}` : String(e));
+    // Only a rejected key is the key's fault; anything else (no connection, service down) says so.
+    ui.toast(!(e instanceof LlmError) || e.needsSignIn ? 'That key was not accepted' : e.friendly);
     return false;
   }
 }

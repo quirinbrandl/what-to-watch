@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { discover } from '../app/discover';
 import { thud, tick } from '../app/platform';
 import { app, useStore } from '../app/store';
-import { signInFlow, ui } from '../app/ui';
+import { KEY_NAME, apiKeyFlow, signInFlow, ui } from '../app/ui';
 import { Pick, Session } from '../core/engine/recommender';
 import { Film, labelOf } from '../core/models';
 import { Tmdb } from '../core/tmdb';
@@ -230,6 +230,19 @@ function Backdrop({ film }: { film: Film }) {
 function Problem() {
   const e = discover.llmError;
   if (!discover.error) return <Blank icon="film-outline" title="Nothing here yet" action="Back" onAction={() => ui.closeFeed()} />;
+  const via = app.settings.llm;
+  if (e?.needsSignIn && via !== 'chatgpt') {
+    return (
+      <Blank
+        icon="key-outline"
+        title={`${KEY_NAME[via]} not accepted`}
+        action="Enter a new key"
+        onAction={async () => {
+          if (await apiKeyFlow(via)) void discover.start();
+        }}
+      />
+    );
+  }
   if (e?.needsSignIn) {
     return (
       <Blank
@@ -242,7 +255,7 @@ function Problem() {
       />
     );
   }
-  if (e?.usageLimit) {
+  if (e?.usageLimit && via === 'chatgpt') {
     return <Blank icon="hourglass-outline" title="ChatGPT usage limit reached" action="Manage usage" onAction={() => Linking.openURL('https://chatgpt.com/settings/usage')} />;
   }
   return <Blank icon="cloud-offline-outline" title={discover.error} action="Try again" onAction={() => void discover.start()} />;

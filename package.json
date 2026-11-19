@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.10.0",
     "@expo-google-fonts/anton": "^0.4.2",
     "@expo-google-fonts/manrope": "^0.4.3",
     "@expo/vector-icons": "^15.0.2",

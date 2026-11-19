@@ -1,10 +1,11 @@
 export class LlmError extends Error {
-  constructor(public code: string, message: string, public status?: number) {
+  /** `who` names the service in messages for the user ("ChatGPT", "Claude"). */
+  constructor(public code: string, message: string, public status?: number, public who = 'ChatGPT') {
     super(message);
   }
 
   get usageLimit(): boolean {
-    return this.code === 'subscription_sharing_usage_limit_exceeded' || this.code === 'insufficient_quota' || this.code === 'rate_limit_exceeded';
+    return this.code === 'subscription_sharing_usage_limit_exceeded' || this.code === 'insufficient_quota' || this.code === 'rate_limit_exceeded' || this.code === 'billing_error';
   }
   get needsSignIn(): boolean {
     return this.status === 401 || this.code === 'signed_out' || this.code === 'session_expired' || this.code === 'subscription_sharing_invalid_user';
@@ -13,23 +14,48 @@ export class LlmError extends Error {
     return this.code === 'subscription_sharing_user_not_eligible';
   }
   get transient(): boolean {
-    return this.status === 503 || this.status === 502 || this.status === 500 || this.code === 'interrupted' || this.code === 'network' || this.code.endsWith('_unavailable');
+    return this.status === 529 || this.status === 503 || this.status === 502 || this.status === 500 || this.code === 'interrupted' || this.code === 'network' || this.code.endsWith('_unavailable');
   }
 
   /** Short, credential-free text for the UI. */
   get friendly(): string {
-    if (this.usageLimit) return 'ChatGPT usage limit reached.';
-    if (this.needsSignIn) return 'Please sign in again.';
+    if (this.code === 'billing_error') return `Your ${this.who} credit balance is too low.`;
+    if (this.usageLimit) return `${this.who} usage limit reached.`;
+    if (this.needsSignIn) return this.who === 'ChatGPT' ? 'Please sign in again.' : `Your ${this.who} API key was not accepted.`;
     if (this.notEligible) return 'Your ChatGPT plan cannot be used in apps.';
     if (this.code === 'network') return 'No connection.';
     if (this.code === 'model_not_found') return 'That model is not available. Pick another in Settings.';
-    return 'ChatGPT is not available right now.';
+    if (this.code === 'refusal') return `${this.who} declined this request.`;
+    return `${this.who} is not available right now.`;
   }
 }
 
 export interface LlmModel {
   slug: string;
   name: string;
+}
+
+/** One piece of a user message: text, or an image given by its URL (sent at low detail). */
+export type UserPart = { text: string } | { image: string };
+
+export interface RespondOpts {
+  model: string;
+  /** The instructions (developer / system message). */
+  developer: string;
+  user: string | UserPart[];
+  /** Reasoning effort: "low" | "medium" | "high". */
+  effort?: string;
+  onProgress?: (chars: number) => void;
+  /** Called with all the text so far, as it streams in. */
+  onText?: (text: string) => void;
+  retries?: number;
+}
+
+/** What the engine needs from a model provider: OpenAI ({@link Llm}) or Anthropic (ClaudeLlm in claude.ts). */
+export interface LlmClient {
+  models(): Promise<LlmModel[]>;
+  /** One streamed answer; resolves with its complete text. Failures are {@link LlmError}s. */
+  respond(opts: RespondOpts): Promise<string>;
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -42,10 +68,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * `fetchFn` must expose a streaming response body (expo/fetch in the app,
  * Node's fetch in the CLI).
  */
-/** One piece of a user message: text, or an image given by its URL (sent at low detail). */
-export type UserPart = { text: string } | { image: string };
-
-export class Llm {
+export class Llm implements LlmClient {
   private static readonly base = 'https://api.openai.com/v1';
   calls = 0;
   chars = 0;
@@ -80,7 +103,7 @@ export class Llm {
    * reasoning effort ("low" | "medium" | "high"); models that do not accept
    * it are retried without.
    */
-  async respond(opts: { model: string; developer: string; user: string | UserPart[]; effort?: string; onProgress?: (chars: number) => void; onText?: (text: string) => void; retries?: number }): Promise<string> {
+  async respond(opts: RespondOpts): Promise<string> {
     let effort = opts.effort;
     const retries = opts.retries ?? 1;
     for (let attempt = 0; ; attempt++) {

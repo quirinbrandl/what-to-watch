@@ -7,8 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { discover } from '../app/discover';
 import { files, tick } from '../app/platform';
 import { PRIVACY_TEXT } from '../app/privacy';
-import { app, useStore } from '../app/store';
-import { apiKeyFlow, signInFlow, ui } from '../app/ui';
+import { ApiKeyKind, app, useStore } from '../app/store';
+import { KEY_NAME, apiKeyFlow, signInFlow, ui } from '../app/ui';
 import { LbExport, LbFormatError, cleanUsername, parseLetterboxdZip } from '../core/letterboxd';
 import { nowSec } from '../core/models';
 
@@ -175,7 +175,8 @@ export function SettingsScreen() {
   };
   const pickModel = async () => {
     if (!app.models.length) await app.loadModels();
-    const key = await ui.choose('Model', [{ key: '', label: 'Automatic', sub: "Your account's default model" }, ...app.models.map((m) => ({ key: m.slug, label: m.name }))], s.model ?? '');
+    const auto = s.llm === 'claude' ? 'Claude Opus 5.5' : "Your account's default model";
+    const key = await ui.choose('Model', [{ key: '', label: 'Automatic', sub: auto }, ...app.models.map((m) => ({ key: m.slug, label: m.name }))], s.model ?? '');
     if (key === undefined) return;
     s.model = key || undefined;
     app.changed();
@@ -200,6 +201,31 @@ export function SettingsScreen() {
       ui.toast(e instanceof Error && e.message.includes('backup') ? e.message : 'Restore failed');
     }
   };
+  /** A row per API key: add it, switch to it, or remove it. */
+  const keyItem = (kind: ApiKeyKind, empty: string) => {
+    const saved = !!app.keys[kind];
+    const inUse = saved && s.llm === kind;
+    return (
+      <Item
+        icon="key-outline"
+        title={KEY_NAME[kind]}
+        sub={!saved ? empty : inUse ? 'In use' : 'Saved · tap to use it'}
+        onPress={async () => {
+          if (!saved) return void apiKeyFlow(kind);
+          if (!inUse) {
+            const what = await ui.choose(KEY_NAME[kind], [
+              { key: 'use', label: 'Use this key' },
+              { key: 'remove', label: 'Remove key', sub: 'The key is deleted from this device' },
+            ]);
+            if (what === 'use') app.use(kind);
+            else if (what === 'remove') void app.setApiKey(undefined, kind);
+            return;
+          }
+          if (await ui.confirm('Remove API key?', 'The key is deleted from this device.', 'Remove', true)) void app.setApiKey(undefined, kind);
+        }}
+      />
+    );
+  };
 
   return (
     <ScrollView contentContainerStyle={{ paddingTop: insets.top + 8, paddingHorizontal: 16, paddingBottom: insets.bottom + 110 }} showsVerticalScrollIndicator={false}>
@@ -207,8 +233,11 @@ export function SettingsScreen() {
         Settings
       </Text>
       <Section title="ACCOUNT">
-        {s.useApiKey && app.apiKey ? (
-          <Item icon="key-outline" title="OpenAI API key" sub="Billed to your API account" />
+        {s.llm !== 'chatgpt' && app.keys[s.llm] ? (
+          <>
+            <Item icon="key-outline" title={KEY_NAME[s.llm]} sub={s.llm === 'claude' ? 'Billed to your Anthropic account' : 'Billed to your API account'} />
+            {app.auth.signedIn && <Item icon="person-circle-outline" title="Use your ChatGPT plan instead" sub={app.auth.email} onPress={() => app.use('chatgpt')} />}
+          </>
         ) : app.auth.signedIn ? (
           <>
             <Item icon="person-circle-outline" title={app.auth.email ?? 'ChatGPT'} sub="Using ChatGPT plan" />
@@ -261,15 +290,8 @@ export function SettingsScreen() {
         )}
       </Section>
       <Section title="ADVANCED">
-        <Item
-          icon="key-outline"
-          title="OpenAI API key"
-          sub={!app.apiKey ? 'Use your own key instead of ChatGPT' : s.useApiKey ? 'In use' : 'Saved'}
-          onPress={async () => {
-            if (!app.apiKey) return void apiKeyFlow();
-            if (await ui.confirm('Remove API key?', 'The key is deleted from this device.', 'Remove', true)) void app.setApiKey(undefined);
-          }}
-        />
+        {keyItem('openai', 'Use your own key instead of ChatGPT')}
+        {keyItem('claude', 'Use Claude with your Anthropic API key')}
       </Section>
       <Section title="YOUR DATA">
         <Item icon="share-outline" title="Export backup" sub="Library and settings, no credentials" onPress={exportBackup} />
