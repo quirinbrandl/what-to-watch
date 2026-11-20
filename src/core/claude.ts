@@ -131,7 +131,9 @@ function claudeError(e: unknown): LlmError {
   if (e instanceof Client.APIError) {
     // Errors inside an open stream carry no HTTP status, only the error type.
     const type = e.type ?? (e.error as { error?: { type?: string } } | undefined)?.error?.type;
-    const code = type === 'overloaded_error' || type === 'api_error' ? 'claude_unavailable' : type === 'billing_error' ? 'billing_error' : String(type ?? `http_${e.status}`);
+    // An empty credit balance comes back as a plain 400 invalid_request_error; only its message tells it apart.
+    const broke = type === 'billing_error' || (type === 'invalid_request_error' && /credit balance/i.test(e.message));
+    const code = type === 'overloaded_error' || type === 'api_error' ? 'claude_unavailable' : broke ? 'billing_error' : String(type ?? `http_${e.status}`);
     return new LlmError(code, e.message, e.status ?? undefined, WHO);
   }
   return new LlmError('interrupted', 'stream interrupted', undefined, WHO);

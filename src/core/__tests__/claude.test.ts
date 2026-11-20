@@ -140,6 +140,12 @@ describe('ClaudeLlm', () => {
     const broke = await ask(errorOf(402, 'billing_error'));
     assert.ok(broke.usageLimit);
     assert.equal(broke.friendly, 'Your Claude credit balance is too low.');
+    // What the API actually sends for an account without credit (seen 2026-11-20).
+    const noCredit = await ask(() =>
+      Response.json({ type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.' } }, { status: 400 }),
+    );
+    assert.equal(noCredit.friendly, 'Your Claude credit balance is too low.');
+    assert.notEqual((await ask(errorOf(400, 'invalid_request_error'))).code, 'billing_error');
     assert.ok((await ask(errorOf(429, 'rate_limit_error'))).usageLimit);
     const busy = await ask(errorOf(529, 'overloaded_error'));
     assert.ok(busy.transient);
