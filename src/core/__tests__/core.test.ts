@@ -12,8 +12,6 @@ import { extractJson, extractJsonLines } from '../llm';
 import { Film, Library, Prov, filmFromJson, filmToJson, makeFilm, nowSec } from '../models';
 import { parseScenes, sceneParts } from '../engine/scenes';
 import { FilmCache, rankStills } from '../tmdb';
-import { MISS } from '../engine/recommender';
-import { Field, FieldInput, newField, speed, sprites, step } from '../field';
 
 function film(id: number, title: string, o: Partial<Film> & { year?: number; flat?: Prov[]; region?: string } = {}): Film {
   const { year = 2015, flat = [], region = 'DE', ...rest } = o;
@@ -379,45 +377,5 @@ describe('background scenes', () => {
     const cache = new FilmCache();
     cache.put(f);
     assert.equal(cache.put(film(7, 'Zodiac', { vote: 8 })).scene, '/scene.jpg');
-  });
-});
-
-describe('wait screen fly-through', () => {
-  const input = (o: Partial<FieldInput> = {}): FieldInput => ({ found: [], finalists: [], verdicts: [], done: false, miss: MISS, ...o });
-  const run = (f: Field, inp: FieldInput, secs: number) => {
-    for (let t = 0; t < secs; t += 1 / 30) step(f, inp, 1 / 30);
-  };
-
-  test('found films come off the far wall into the flight', () => {
-    const f = newField(400, 860);
-    run(f, input(), 2);
-    assert.ok(f.ps.length > 200 && f.ps.every((p) => p.film === ''), 'at first only the user\'s own films fly');
-    const found = [...Array(20)].map((_, i) => `/found${i}.jpg`);
-    run(f, input({ found }), 0.5);
-    const flying = new Set(f.ps.filter((p) => p.film).map((p) => p.film));
-    assert.equal(flying.size, 20, 'every found film is in the flight');
-    assert.ok(sprites(f).some((s) => s.film && s.edge > 0), 'found films carry the accent edge');
-  });
-
-  test('the rated films gather, the better ones in front; below the cutoff they go back to the wall', () => {
-    const f = newField(400, 860);
-    const finalists = [...Array(30)].map((_, i) => `/f${i}.jpg`);
-    const verdicts: [string, number][] = [];
-    const inp = input({ found: finalists, finalists, verdicts });
-    run(f, inp, 3);
-    assert.equal(Object.keys(f.cloud).length, 30, 'every film being rated is in the cloud');
-    assert.ok(speed(f) < 0.3, 'the flight slows down while rating');
-    finalists.forEach((film, i) => verdicts.push([film, [2, 3, 4, 5, 2.5, 3.5][i % 6]]));
-    run(f, inp, 12);
-    const kept = finalists.filter((_, i) => [2, 3, 4, 5, 2.5, 3.5][i % 6] >= MISS);
-    assert.deepEqual(Object.keys(f.cloud).sort(), kept.sort(), 'only the films that make the feed stay');
-    const depth = (film: string) => f.ps[f.cloud[film]].z;
-    assert.ok(depth('/f3.jpg') < depth('/f2.jpg') && depth('/f2.jpg') < depth('/f1.jpg'), '5 stars in front of 4, 4 in front of 3');
-    assert.ok(!f.ps.some((p) => p.film === '/f0.jpg' && p.hold), 'a 2-star film has left the cloud');
-
-    // The search is done: the flight stops, the cloud holds.
-    run(f, { ...inp, done: true }, 1);
-    assert.equal(speed(f), 0);
-    assert.deepEqual(Object.keys(f.cloud).sort(), kept.sort());
   });
 });

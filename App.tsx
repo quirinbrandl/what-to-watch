@@ -15,7 +15,7 @@ import { discover } from './src/app/discover';
 import { tick } from './src/app/platform';
 import { app, useStore } from './src/app/store';
 import { ui } from './src/app/ui';
-import { Icon, IconName, TabSwipe } from './src/ui/components';
+import { Icon, IconName, Showing, TabSwipe } from './src/ui/components';
 import { DiscoverScreen, FilterSheet } from './src/ui/Discover';
 import { FeedScreen } from './src/ui/Feed';
 import { FilmSheet } from './src/ui/FilmSheet';
@@ -149,7 +149,7 @@ function Shell() {
   const page = (key: string, body: React.ReactNode) => (
     // Clipped, so the home screen's tilted poster wall stays out of its neighbour.
     <View key={key} style={{ width, height: '100%', overflow: 'hidden' }} importantForAccessibility={key === ui.tab ? 'auto' : 'no-hide-descendants'} accessibilityElementsHidden={key !== ui.tab}>
-      {mounted.has(key) && body}
+      <Showing.Provider value={key === ui.tab && !hidden}>{mounted.has(key) && body}</Showing.Provider>
     </View>
   );
   return (

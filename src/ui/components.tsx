@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image, ImageStyle } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { ReactNode, createContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { ReactNode, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, GestureResponderEvent, LayoutChangeEvent, Pressable, ScrollView, StyleProp, StyleSheet, Text, View, ViewStyle, useWindowDimensions } from 'react-native';
 import { GestureDetector, PanGesture, useCompetingGestures, usePanGesture, useTapGesture } from 'react-native-gesture-handler';
-import Animated, { Easing, FadeIn, FadeOut, SlideInDown, SlideOutDown, cancelAnimation, useAnimatedStyle, useFrameCallback, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeOut, type SharedValue, SlideInDown, SlideOutDown, useAnimatedStyle, useFrameCallback, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -61,16 +61,20 @@ const fill = (posters: string[], min: number): string[] => {
   return out;
 };
 
-function DriftColumn({ posters, width, speed, reverse }: { posters: string[]; width: number; speed: number; reverse: boolean }) {
+/**
+ * Whether the screen around can be seen. Tabs stay mounted when they are not on screen, and an
+ * animation that keeps running there still costs the UI thread a commit of the whole view tree
+ * every frame (this made the wait screen stutter): hidden screens pause theirs.
+ */
+export const Showing = createContext(true);
+
+function DriftColumn({ posters, width, speed, reverse, clock }: { posters: string[]; width: number; speed: number; reverse: boolean; clock: SharedValue<number> }) {
   const gap = 10;
   const total = posters.length * (width * 1.5 + gap);
-  const t = useSharedValue(0);
-  useEffect(() => {
-    t.value = 0;
-    t.value = withRepeat(withTiming(1, { duration: (total / speed) * 1000, easing: Easing.linear }), -1, false);
-    return () => cancelAnimation(t);
-  }, [total, speed, t]);
-  const style = useAnimatedStyle(() => ({ transform: [{ translateY: reverse ? (t.value - 1) * total : -t.value * total }] }));
+  const style = useAnimatedStyle(() => {
+    const y = (clock.value * speed) % total;
+    return { transform: [{ translateY: reverse ? y - total : -y }] };
+  });
   return (
     <Animated.View style={[{ width }, style]}>
       {[...posters, ...posters].map((p, i) => (
@@ -109,12 +113,19 @@ export const PosterWall = React.memo(function PosterWall({ posters, dim = 0.5 }:
   const cols = 4;
   const colW = (width * 1.5) / cols - 10;
   const columns = useMemo(() => Array.from({ length: cols }, (_, c) => fill(posters.filter((_, i) => i % cols === c), Math.ceil((height * 1.4) / (colW * 1.5 + 10)) + 1).slice(0, 9)), [posters, height, colW]);
+  // Seconds of drift so far; it stands still while the screen is hidden.
+  const clock = useSharedValue(0);
+  const drift = useFrameCallback((f) => {
+    clock.value += (f.timeSincePreviousFrame ?? 0) / 1000;
+  }, false);
+  const showing = useContext(Showing) && posters.length > 0;
+  useEffect(() => drift.setActive(showing), [showing, drift]);
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none" importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
       {posters.length > 0 && (
         <View style={{ position: 'absolute', left: -width * 0.25, top: -height * 0.18, width: width * 1.5, height: height * 1.4, flexDirection: 'row', gap: 10, transform: [{ rotate: '-8deg' }] }}>
           {columns.map((p, c) => (
-            <DriftColumn key={c} posters={p} width={colW} speed={9 + 5 * ((c * 7) % 3)} reverse={c % 2 === 1} />
+            <DriftColumn key={c} posters={p} width={colW} speed={9 + 5 * ((c * 7) % 3)} reverse={c % 2 === 1} clock={clock} />
           ))}
         </View>
       )}
