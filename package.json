@@ -46,7 +46,8 @@
     "ios": "expo run:ios",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/core/__tests__/*.test.ts",
-    "eval": "tsx tool/eval.ts"
+    "eval": "tsx tool/eval.ts",
+    "phone": "tool/phone.sh"
   },
   "private": true,
   "license": "MIT"

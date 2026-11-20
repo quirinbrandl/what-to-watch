@@ -9,7 +9,8 @@ worktree: T3 Code starts new conversations in one and runs `npm ci` there first.
   (`/Users/quirin/Projekte/what-to-watch`) and other agents' worktrees alone.
 - Git-ignored local files are not copied into a worktree. For a release build, write a
   temporary `android/key.properties` whose `storeFile` is the absolute path of the main
-  checkout's `android/upload-keystore.jks`, build, then delete it.
+  checkout's `android/upload-keystore.jks`, build, then delete it. `npm run phone` does
+  this by itself and installs your branch on the phone plugged in over USB.
 
 ## Putting work on main
 

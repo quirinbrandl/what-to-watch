@@ -82,6 +82,8 @@ npm run typecheck
 
 npx expo start                # dev server
 cd android && ./gradlew :app:assembleDebug && adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+npm run phone                 # latest main as a release build onto the phone on USB, data kept
 ```
 
 Release builds, signing and the Play Store listing: [docs/play-store.md](docs/play-store.md).
