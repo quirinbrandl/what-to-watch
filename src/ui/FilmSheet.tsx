@@ -114,7 +114,8 @@ export function FilmSheet() {
           onPress={e?.watched ? undefined : () => app.setWatchlist(f.id, !(e?.watchlist ?? false))}
         />
         <Chip label="Seen" icon={e?.watched ? 'eye' : 'eye-outline'} active={e?.watched === true} onPress={() => app.setWatched(f.id, !(e?.watched ?? false))} />
-        <Chip label="Not for me" icon="ban-outline" negative={e?.notInterested === true} onPress={() => app.setNotInterested(f.id, !(e?.notInterested ?? false))} />
+        {/* Red when marked; screen readers hear "Not for me, selected", not "Not Not for me". */}
+        <Chip label="Not for me" a11yLabel="Not for me" icon="ban-outline" negative={e?.notInterested === true} onPress={() => app.setNotInterested(f.id, !(e?.notInterested ?? false))} />
       </View>
       <View style={{ marginTop: 24 }}>
         <ProviderRow film={f} />

@@ -305,15 +305,15 @@ export function BigButton(props: { label: string; icon?: IconName; onPress?: () 
   );
 }
 
-/** Compact selectable chip. `negative` marks an exclusion. */
-export function Chip(props: { label: string; icon?: IconName; active?: boolean; negative?: boolean; onPress?: () => void; leading?: ReactNode }) {
-  const { label, icon, active = false, negative = false, onPress, leading } = props;
+/** Compact selectable chip. `negative` marks an exclusion, read out as "Not <label>" unless `a11yLabel` says otherwise. */
+export function Chip(props: { label: string; a11yLabel?: string; icon?: IconName; active?: boolean; negative?: boolean; onPress?: () => void; leading?: ReactNode }) {
+  const { label, a11yLabel, icon, active = false, negative = false, onPress, leading } = props;
   const fg = negative ? C.danger : active ? '#0B0B0E' : onPress ? C.ink : C.faint;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={negative ? `Not ${label}` : label}
-      accessibilityState={{ selected: active, disabled: !onPress }}
+      accessibilityLabel={a11yLabel ?? (negative ? `Not ${label}` : label)}
+      accessibilityState={{ selected: active || negative, disabled: !onPress }}
       disabled={!onPress}
       onPress={() => {
         tick();
