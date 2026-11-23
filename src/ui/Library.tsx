@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { tick } from '../app/platform';
@@ -8,7 +9,7 @@ import { app, useStore } from '../app/store';
 import { ui } from '../app/ui';
 import { Entry, Film, labelOf } from '../core/models';
 
-import { Blank, Chip, Icon, IconName, Overlay, Poster, RoundButton, Stars } from './components';
+import { Blank, Chip, Icon, IconName, Overlay, Poster, RoundButton, Stars, TabSwipe } from './components';
 import { importZipFlow } from './Settings';
 import { C, sans, display } from './theme';
 
@@ -50,13 +51,15 @@ const TABS: [IconName, string][] = [
   ['star', 'Rated'],
   ['bookmark', 'Watchlist'],
   ['eye', 'Seen'],
+  ['ban', 'Not for me'],
 ];
 
-/** The user's films as a poster grid: rated, watchlist, seen. */
+/** The user's films as a poster grid: rated, watchlist, seen, not for me. */
 export function LibraryScreen() {
   useStore(app);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const tabs = useContext(TabSwipe);
   const [tab, setTab] = useState(0);
   const [byRating, setByRating] = useState(false);
   const lib = app.lib;
@@ -66,6 +69,7 @@ export function LibraryScreen() {
       lib.rated.sort((a, b) => (byRating && b.rating! !== a.rating! ? b.rating! - a.rating! : (b.ratingAt ?? 0) - (a.ratingAt ?? 0))),
       lib.watchlist.sort((a, b) => (b.watchlistAt ?? 0) - (a.watchlistAt ?? 0)),
       lib.watched.sort((a, b) => (b.watchedAt ?? 0) - (a.watchedAt ?? 0)),
+      lib.notInterested.sort((a, b) => (b.niAt ?? 0) - (a.niAt ?? 0)),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rev, byRating, lib.entries.size],
@@ -85,19 +89,20 @@ export function LibraryScreen() {
       windowSize={7}
       refreshControl={<RefreshControl refreshing={app.syncing} onRefresh={() => void app.syncLetterboxd()} tintColor={C.ink} colors={[C.bg]} progressBackgroundColor={C.ink} progressViewOffset={insets.top} />}
       ListHeaderComponent={
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 16, paddingBottom: 6 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ paddingTop: insets.top + 8, paddingBottom: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16 }}>
             <Text style={[display(34), { flex: 1 }]} accessibilityRole="header">
               Library
             </Text>
             {tab === 0 && <RoundButton icon={byRating ? 'star' : 'time-outline'} label={byRating ? 'Sorted by rating' : 'Sorted by date'} size={46} onPress={() => setByRating(!byRating)} />}
             <RoundButton icon="search" label="Find a film" size={46} onPress={() => ui.openSearch()} />
           </View>
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+          {/* Four chips are wider than a phone: swiping along them scrolls them; it does not switch tabs. */}
+          <GestureScrollView horizontal block={tabs} showsHorizontalScrollIndicator={false} style={{ marginTop: 14 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
             {TABS.map(([icon, label], i) => (
               <Chip key={label} label={`${label}  ${lists[i].length}`} icon={icon} active={tab === i} onPress={() => setTab(i)} />
             ))}
-          </View>
+          </GestureScrollView>
         </View>
       }
       ListEmptyComponent={

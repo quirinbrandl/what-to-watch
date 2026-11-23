@@ -440,6 +440,9 @@ export class Library {
   get watchlist(): Entry[] {
     return this.all().filter((e) => e.watchlist);
   }
+  get notInterested(): Entry[] {
+    return this.all().filter((e) => e.notInterested);
+  }
 
   touch(): void {
     this.rev++;

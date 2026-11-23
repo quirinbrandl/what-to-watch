@@ -120,6 +120,19 @@ describe('merge rules', () => {
     assert.equal(e.watched, true, 'the newer Letterboxd rating still stands');
   });
 
+  test('not for me: listed, leaves the watchlist, undone by unmarking or rating', () => {
+    const lib = new Library();
+    lib.setWatchlist(1, true);
+    lib.setNotInterested(1, true);
+    lib.setNotInterested(2, true);
+    lib.rate(3, 4);
+    assert.deepEqual(lib.notInterested.map((e) => e.id).sort(), [1, 2]);
+    assert.equal(lib.get(1)!.watchlist, false);
+    lib.setNotInterested(1, false);
+    lib.rate(2, 2);
+    assert.deepEqual(lib.notInterested, []);
+  });
+
   test('json round trip', () => {
     const lib = new Library();
     lib.rate(1, 4);
