@@ -62,6 +62,7 @@ export function LibraryScreen() {
   const tabs = useContext(TabSwipe);
   const [tab, setTab] = useState(0);
   const [byRating, setByRating] = useState(false);
+  const list = useRef<FlatList<Entry>>(null);
   const lib = app.lib;
   const rev = lib.rev;
   const lists = useMemo(
@@ -78,8 +79,8 @@ export function LibraryScreen() {
   const tile = (width - 24 - GAP * 2) / 3;
   return (
     <FlatList
+      ref={list}
       data={items}
-      key={tab}
       numColumns={3}
       keyExtractor={(e) => String(e.id)}
       renderItem={({ item }) => <FilmTile film={app.film(item.id)!} entry={item} width={tile} />}
@@ -97,10 +98,20 @@ export function LibraryScreen() {
             {tab === 0 && <RoundButton icon={byRating ? 'star' : 'time-outline'} label={byRating ? 'Sorted by rating' : 'Sorted by date'} size={46} onPress={() => setByRating(!byRating)} />}
             <RoundButton icon="search" label="Find a film" size={46} onPress={() => ui.openSearch()} />
           </View>
-          {/* Four chips are wider than a phone: swiping along them scrolls them; it does not switch tabs. */}
+          {/* Four chips are wider than a phone: swiping along them scrolls them; it does not switch tabs.
+              Switching lists keeps this header mounted (no key on the FlatList), so the row stays where it was scrolled. */}
           <GestureScrollView horizontal block={tabs} showsHorizontalScrollIndicator={false} style={{ marginTop: 14 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
             {TABS.map(([icon, label], i) => (
-              <Chip key={label} label={`${label}  ${lists[i].length}`} icon={icon} active={tab === i} onPress={() => setTab(i)} />
+              <Chip
+                key={label}
+                label={`${label}  ${lists[i].length}`}
+                icon={icon}
+                active={tab === i}
+                onPress={() => {
+                  setTab(i);
+                  list.current?.scrollToOffset({ offset: 0, animated: false });
+                }}
+              />
             ))}
           </GestureScrollView>
         </View>
