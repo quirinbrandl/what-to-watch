@@ -1,3 +1,4 @@
+import * as Application from 'expo-application';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import React, { ReactNode } from 'react';
@@ -15,7 +16,8 @@ import { nowSec } from '../core/models';
 import { BigButton, Icon, IconName, PosterRibbon } from './components';
 import { C, caps, sans, display } from './theme';
 
-export const VERSION = '1.0.0';
+/** From the release tag the APK was built from (android/app/build.gradle). */
+export const VERSION = Application.nativeApplicationVersion ?? '';
 
 const ZIP_TYPES = ['application/zip', 'application/x-zip-compressed', 'application/x-zip', 'application/octet-stream'];
 

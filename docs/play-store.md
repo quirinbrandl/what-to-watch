@@ -29,7 +29,7 @@ keytool -genkeypair -v -keystore android/upload-keystore.jks -storetype JKS \
 
 Without `key.properties` the release build is signed with the debug key, so it can be installed for testing but not uploaded.
 
-Before the first upload: pick your final application id (`applicationId` and `namespace` in `android/app/build.gradle`, `android.package` and `scheme` in `app.json`, the `<data android:scheme>` in the manifest and `AUTH_RETURN_URL` in `src/app/platform.ts`; currently `dev.whattowatch.app`). It can never change after publishing. Bump `versionCode`/`versionName` in `android/app/build.gradle` for every upload.
+Before the first upload: pick your final application id (`applicationId` and `namespace` in `android/app/build.gradle`, `android.package` and `scheme` in `app.json`, the `<data android:scheme>` in the manifest and `AUTH_RETURN_URL` in `src/app/platform.ts`; currently `dev.whattowatch.app`). It can never change after publishing. The version comes from the git tag (README → Releases); build every upload from a new tag.
 
 The `android/` folder is committed and edited by hand (signing, trimmed permissions). Do not run `expo prebuild --clean`, which would regenerate it.
 

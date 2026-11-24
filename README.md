@@ -11,6 +11,10 @@ Tell it your mood, set a few filters and swipe through full-screen posters picke
 - **Per search, not per account:** the streaming services are a filter like any other — Disney+ tonight with friends, only Netflix tomorrow. The country is guessed from the phone's time zone (no location access, no extra network call) and can be changed next to the services.
 - **Nothing found twice:** every search is kept on the phone (the last 20). "Your searches" on the home screen brings one back instantly, with its films and their order.
 
+## Install
+
+On an Android phone (Android 7 or newer), open the [latest release](https://github.com/quirinbrandl/what-to-watch/releases/latest), download the APK and open it. Android asks once to allow installs from your browser. A newer APK installs over the old one and keeps your library.
+
 ## How recommendations are made
 
 ```
@@ -86,7 +90,17 @@ cd android && ./gradlew :app:assembleDebug && adb install -r app/build/outputs/a
 npm run phone                 # latest main as a release build onto the phone on USB, data kept
 ```
 
-Release builds, signing and the Play Store listing: [docs/play-store.md](docs/play-store.md).
+### Releases
+
+```sh
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+The tag starts `.github/workflows/release.yml`: type check and tests, then an APK for arm64 phones, signed with the upload key from the repository's secrets, published as the GitHub release `v1.2.0` with the commits since the previous tag as notes. Started by hand under Actions → Release, the workflow only builds and leaves the APK on the run's page.
+
+The version comes from the tag: `versionName` 1.2.0, `versionCode` 10203 (minor and patch stay below 100). Builds without `-PappVersion`, such as `npm run phone`, take the newest tag, so a release installs over them and they install over it. Every release must be signed with the same key (`android/upload-keystore.jks`, also in the secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`): with another key, installed apps can't update without being removed, which deletes their data.
+
+Signing and the Play Store listing: [docs/play-store.md](docs/play-store.md).
 
 ## Project layout
 

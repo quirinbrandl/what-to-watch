@@ -1,0 +1,80 @@
+name: Release
+
+# Pushing a tag like v1.2.0 builds the signed APK and publishes it as a GitHub release.
+# Started by hand (Actions → Release → Run workflow), it only builds and keeps the APK
+# on the run's page: a dry run without a release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the notes list the commits since the previous tag
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21 # Gradle fails on newer JDKs
+      - uses: gradle/actions/setup-gradle@v6
+      - run: npm ci
+
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # Without the key the build would quietly sign with the debug key, and the APK
+          # could not update an installed app.
+          [ -n "$KEYSTORE" ] || { echo "::error::The signing secrets are missing"; exit 1; }
+          echo "$KEYSTORE" | base64 --decode > android/upload-keystore.jks
+          printf 'storeFile=upload-keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
+
+      - name: Build the APK
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version=${GITHUB_REF_NAME#v}
+            (cd android && ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a -PappVersion="$version")
+          else
+            version=dry-run-${GITHUB_SHA::7}
+            (cd android && ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a)
+          fi
+          mv android/app/build/outputs/apk/release/app-release.apk "WhatToWatch-$version.apk"
+          echo "APK=WhatToWatch-$version.apk" >> "$GITHUB_ENV"
+
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prev=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          if [ -n "$prev" ]; then
+            git log --no-merges --format='- %s' "$prev..$GITHUB_REF_NAME" > notes.md
+          else
+            echo 'First release.' > notes.md
+          fi
+          printf '\nInstall: open the APK below on your Android phone (arm64, Android 7 or newer).\n' >> notes.md
+          gh release create "$GITHUB_REF_NAME" "$APK" --title "WhatToWatch ${GITHUB_REF_NAME#v}" --notes-file notes.md
+
+      - name: Keep the APK on the run's page
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.APK }}
+          path: ${{ env.APK }}

@@ -81,6 +81,21 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+// The version comes from the release tag (v1.2.0): the release workflow passes it as
+// -PappVersion=1.2.0, every other build takes the newest tag. versionCode follows from it,
+// so a release installs over any build made before it.
+def appVersion = findProperty('appVersion')
+if (!appVersion) {
+    try {
+        appVersion = ['git', 'describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*'].execute(null, rootDir).text.trim().replaceFirst(/^v/, '')
+    } catch (IOException ignored) {}
+}
+appVersion = appVersion ?: '1.0.0'
+if (!(appVersion ==~ /\d+\.\d{1,2}\.\d{1,2}/)) {
+    throw new GradleException("Version '${appVersion}' is not major.minor.patch with minor and patch below 100, like the tag v1.2.0")
+}
+def appVersionCode = appVersion.tokenize('.').collect { it as int }.with { 10000 * it[0] + 100 * it[1] + it[2] }
+
 def keyProps = new Properties()
 def keyPropsFile = rootProject.file('key.properties')
 if (keyPropsFile.exists()) {
@@ -98,8 +113,8 @@ android {
         applicationId 'dev.whattowatch.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        versionCode appVersionCode
+        versionName appVersion
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
