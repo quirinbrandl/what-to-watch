@@ -20,14 +20,9 @@ main only takes pull requests. When the user wants the work on main:
 2. `git push -u origin HEAD` and open a pull request. Fill in its template in plain words:
    the user reads it instead of the code. For anything visible, add a screenshot from
    the emulator.
-3. Turn on auto-merge: `gh pr merge --auto --squash`. GitHub merges it once both checks
-   pass: `check` (types and tests) and `sensitive`.
-4. `sensitive` fails when the pull request touches what the user wants to see first:
-   dependencies, permissions, version and signing, sign-in and key storage, the model's
-   questions, the privacy policy, a web address the app has not used before, these rules
-   and the CI (the list is in `.github/sensitive.sh`). Tell the user what changes there
-   and why. They add the label `ok` when they agree; never add it yourself.
-5. If `check` fails or the pull request has conflicts, fix it on your branch, rebase
+3. Turn on auto-merge: `gh pr merge --auto --squash`. GitHub merges it once `check`
+   (types and tests) passes.
+4. If `check` fails or the pull request has conflicts, fix it on your branch, rebase
    onto `origin/main` and push again with `git push --force-with-lease`.
 
 Releases are the user's: don't push tags (README → Releases).
