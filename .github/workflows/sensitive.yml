@@ -1,0 +1,20 @@
+name: Sensitive
+
+# Holds a pull request that touches what the user wants to see first (the list is in
+# .github/sensitive.sh) until they add the label "ok". Required for merging into main.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+  sensitive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: .github/sensitive.sh
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          OK: ${{ contains(github.event.pull_request.labels.*.name, 'ok') }}
