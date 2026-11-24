@@ -47,3 +47,4 @@ git branch -D <your branch>
 ```
 
 If either check fails, don't delete anything: tell the user what is not on main yet.
+
